@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data outputs (keep empirical data, ignore generated results)
+data/results/*.csv
+data/results/*.json
+data/results/*.sqlite
+data/results/*.db
+!data/results/.gitkeep
+
+# Database
+*.sqlite3
+*.db
+
+# Environment files
+.env
+.env.local
+
+# OS
+Thumbs.db
