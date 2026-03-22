@@ -121,7 +121,8 @@ def run_h1_delegation_vs_labor(
     results = batch_run(
         ConvenienceParadoxModel,
         parameters=params,
-        iterations=1,           # One run per parameter+seed combination
+        # Mesa 3.x: iterations is deprecated; seeds are embedded in params["seed"].
+        # Each (parameter_combo, seed) combination gets exactly one run.
         max_steps=steps,
         number_processes=1,     # Single process for reproducibility on M4 Pro
         data_collection_period=1,
@@ -187,7 +188,6 @@ def run_h2_involution_threshold(
     results = batch_run(
         ConvenienceParadoxModel,
         parameters=params,
-        iterations=1,
         max_steps=steps,
         number_processes=1,
         data_collection_period=1,
@@ -255,7 +255,6 @@ def run_h4_mixed_stability(
     results = batch_run(
         ConvenienceParadoxModel,
         parameters=params,
-        iterations=1,
         max_steps=steps,
         number_processes=1,
         data_collection_period=1,
@@ -309,7 +308,6 @@ def run_full_sensitivity(
     results = batch_run(
         ConvenienceParadoxModel,
         parameters=params,
-        iterations=1,
         max_steps=steps,
         number_processes=1,
         data_collection_period=1,

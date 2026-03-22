@@ -91,12 +91,19 @@ def _model_required(func):
     return wrapper
 
 
-def _save_run_to_db(model: ConvenienceParadoxModel, label: str | None) -> int:
+def _save_run_to_db(
+    model: ConvenienceParadoxModel,
+    label: str | None,
+    preset: str | None = None,
+) -> int:
     """Persist the completed simulation run to SQLite and return the run ID.
 
     Args:
         model: The completed ConvenienceParadoxModel.
         label: Optional user-provided label for this run.
+        preset: Preset name ('type_a', 'type_b', 'custom', or None).
+            Stored in its own column so the run history UI can display it
+            without parsing params_json.
 
     Returns:
         The integer ID of the newly created `runs` row.
@@ -118,11 +125,11 @@ def _save_run_to_db(model: ConvenienceParadoxModel, label: str | None) -> int:
 
         cursor = db.execute(
             """INSERT INTO runs
-               (label, params_json, steps_run,
+               (label, preset, params_json, steps_run,
                 final_avg_stress, final_avg_delegation_rate,
                 final_total_labor_hours, final_social_efficiency)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (label, params_json, model.current_step,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (label, preset, params_json, model.current_step,
              final_stress, final_delegation, final_labor, final_efficiency),
         )
         run_id = cursor.lastrowid
@@ -312,7 +319,9 @@ def run_simulation():
 
     run_id = None
     if req.save_run:
-        run_id = _save_run_to_db(model, req.run_label)
+        # Pass the active preset name so it is stored in its own column.
+        active_preset = sim["params"].get("preset")
+        run_id = _save_run_to_db(model, req.run_label, preset=active_preset)
         with lock:
             sim["run_id"] = run_id
 
@@ -357,7 +366,13 @@ def reset_simulation():
 @simulation_bp.route("/api/simulation/data")
 @_model_required
 def get_simulation_data():
-    """Return complete simulation data: model time-series + current agent states.
+    """Return simulation data: model time-series + current agent states.
+
+    Query parameters:
+        last_n (int, optional): If provided, return only the last N rows of
+            model_data. Used by the LLM chat widget (chat.js) to retrieve a
+            compact data context for the result interpreter without sending the
+            full history. If omitted or 0, all steps are returned.
 
     Response (JSON):
         {
@@ -369,6 +384,12 @@ def get_simulation_data():
     Used by the dashboard on page load or after a run completes to
     refresh all charts at once.
     """
+    # Optional last_n query parameter for compact LLM context retrieval.
+    try:
+        last_n = int(request.args.get("last_n", 0))
+    except (ValueError, TypeError):
+        last_n = 0
+
     lock = _get_lock()
     sim = _get_sim()
 
@@ -376,6 +397,8 @@ def get_simulation_data():
         model: ConvenienceParadoxModel = sim["model"]
         df = model.get_model_dataframe().reset_index()
         step_col = df.columns[0]
+        if last_n > 0:
+            df = df.tail(last_n)
         model_data = df.rename(columns={step_col: "step"}).to_dict(orient="records")
         agent_states = model.get_agent_states()
         current_step = model.current_step
