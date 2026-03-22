@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 import textwrap
 import time
@@ -66,8 +67,9 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-# LLM model for forum dialogues. Same primary model as llm_service.py.
-FORUM_MODEL = "qwen3.5:4b"
+# LLM model for forum dialogues. Follows the same env-var pattern as llm_service.py.
+# Override: LLM_PRIMARY_MODEL=your-model:tag python run.py
+FORUM_MODEL = os.environ.get("LLM_PRIMARY_MODEL", "qwen3.5:4b")
 
 # Maximum absolute change to delegation_preference per forum session.
 # This cap ensures the LLM cannot dominate simulation dynamics.

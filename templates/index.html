@@ -288,6 +288,72 @@
 
   </div>
 
+  <!-- ============================================================
+       AGENT FORUMS PANEL (Phase 5 — Experimental LLM-in-loop mode)
+       Purpose: trigger forum steps, display dialogue transcripts
+       Driven by: POST /api/simulation/forum_step
+                  GET  /api/simulation/forum_log
+       ============================================================ -->
+  <div id="forum-panel">
+    <h4>
+      Agent Communication Forums
+      <span class="chart-hypothesis-tag" style="background:#fff3e0;color:#e65100">
+        Experimental · Grey-box
+      </span>
+    </h4>
+    <p class="forum-description">
+      In each forum step a random sample of agents participates in LLM-driven dialogues
+      about delegation norms. The resulting consensus nudges agents' delegation preferences
+      by a small bounded amount (±<strong>0.06</strong> max), demonstrating how LLM-in-loop
+      reasoning compares to the rule-based conformity mechanism.
+      <em>Requires Ollama with the primary model loaded. Each step takes 15–60 s.</em>
+    </p>
+
+    <!-- Forum controls row -->
+    <div class="forum-controls">
+      <label>
+        Participants
+        <input type="number" id="forum-fraction" value="20" min="5" max="50" step="5"
+               title="Fraction of agents invited to the forum (%)">
+        <span class="forum-unit">%</span>
+      </label>
+      <label>
+        Group size
+        <input type="number" id="forum-group-size" value="2" min="2" max="4" step="1"
+               title="Agents per dialogue group">
+      </label>
+      <label>
+        Turns/agent
+        <input type="number" id="forum-num-turns" value="2" min="1" max="3" step="1"
+               title="Dialogue turns each agent takes">
+      </label>
+      <button class="ctrl-btn primary" id="btn-forum-step"
+              onclick="runForumStep()" disabled
+              title="Run one forum event (requires an initialised simulation and Ollama)">
+        💬 Run Forum Step
+      </button>
+      <button class="ctrl-btn" id="btn-forum-clear"
+              onclick="clearForumLog()"
+              style="font-size:10px">
+        Clear
+      </button>
+    </div>
+
+    <!-- Forum status / spinner -->
+    <div id="forum-status" style="display:none;font-size:11px;color:var(--light-muted);
+         padding:6px 0;font-style:italic">
+      ⏳ Running forum step — LLM is generating dialogues…
+    </div>
+
+    <!-- Forum log: collapsible session records -->
+    <div id="forum-log" style="margin-top:10px;display:flex;flex-direction:column;gap:10px">
+      <div id="forum-empty" style="font-size:11px;color:var(--light-muted);
+           text-align:center;padding:16px;font-style:italic">
+        No forum sessions yet. Click "Run Forum Step" after initialising a simulation.
+      </div>
+    </div>
+  </div>
+
   <!-- Run history panel: lists saved SQLite runs for comparison
        Driven by GET /api/runs. Each row has an "Overlay" button that
        fetches /api/runs/<id> and adds a trace to the time-series chart. -->

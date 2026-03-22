@@ -377,6 +377,160 @@ input[type="range"]::-webkit-slider-thumb:hover { background: var(--blue-light);
 .chart-annotation.visible { display: block; }
 
 /* ============================================================
+   Agent Forums panel (Phase 5)
+   ============================================================ */
+#forum-panel {
+  background: var(--light-card);
+  border: 1px solid #ffe0b2;
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+#forum-panel h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--light-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.forum-description {
+  font-size: 11px;
+  color: var(--light-muted);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.forum-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-top: 1px solid var(--light-border);
+  border-bottom: 1px solid var(--light-border);
+  margin-bottom: 8px;
+}
+
+.forum-controls label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--light-text);
+  white-space: nowrap;
+}
+
+.forum-controls input[type="number"] {
+  width: 52px;
+  background: var(--light-bg);
+  border: 1px solid var(--light-border);
+  border-radius: 4px;
+  color: var(--light-text);
+  font-size: 11px;
+  padding: 3px 6px;
+  text-align: center;
+}
+
+.forum-unit {
+  font-size: 10px;
+  color: var(--light-muted);
+}
+
+/* Individual forum session card */
+.forum-session {
+  border: 1px solid var(--light-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.forum-session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  background: #fafafa;
+  cursor: pointer;
+  font-size: 11px;
+  user-select: none;
+}
+
+.forum-session-header:hover { background: #f0f0f0; }
+
+.forum-session-meta {
+  color: var(--light-muted);
+  font-size: 10px;
+}
+
+.forum-session-body {
+  display: none;
+  padding: 10px;
+}
+
+.forum-session-body.open { display: block; }
+
+/* Individual group dialogue card */
+.forum-group {
+  margin-bottom: 10px;
+  padding: 8px;
+  background: #f8f9ff;
+  border-radius: 4px;
+  border-left: 3px solid var(--accent);
+}
+
+.forum-group:last-child { margin-bottom: 0; }
+
+.forum-group-header {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--light-muted);
+  margin-bottom: 6px;
+}
+
+.forum-turn {
+  margin-bottom: 5px;
+  font-size: 11px;
+}
+
+.forum-speaker {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.forum-content {
+  color: var(--light-text);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.forum-outcome {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid var(--light-border);
+  font-size: 10px;
+}
+
+.forum-outcome-summary {
+  color: var(--light-text);
+  margin-bottom: 3px;
+}
+
+.forum-delta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--light-muted);
+}
+
+.forum-delta.positive { color: #c0392b; }  /* more delegation = warmer */
+.forum-delta.negative { color: #2166AC; }  /* more autonomy = cooler */
+
+/* ============================================================
    Run history panel
    ============================================================ */
 #run-history {

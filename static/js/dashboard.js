@@ -321,7 +321,7 @@ async function updateStatusBar() {
 
 /** setButtonStates — Enable or disable control buttons based on model state. */
 function setButtonStates(hasModel) {
-  ['btn-step1', 'btn-step10', 'btn-run', 'btn-reset'].forEach(id => {
+  ['btn-step1', 'btn-step10', 'btn-run', 'btn-reset', 'btn-forum-step'].forEach(id => {
     document.getElementById(id).disabled = !hasModel;
   });
 }
@@ -412,11 +412,12 @@ async function resetSimulation() {
   await fetch('/api/simulation/reset', { method: 'POST' });
   clearOverlays();
   initCharts();
-  // Clear LLM annotations from the previous run.
+  // Clear LLM annotations and forum log from the previous run.
   document.querySelectorAll('.chart-annotation').forEach(el => {
     el.innerHTML = '';
     el.classList.remove('visible');
   });
+  clearForumLog();
   document.getElementById('sim-dot').className = 'status-dot';
   document.getElementById('sim-status-text').textContent = 'Not initialised';
   document.getElementById('step-counter').textContent = '—';
@@ -565,6 +566,208 @@ function toggleChat() {
 }
 
 // ---------------------------------------------------------------------------
+// Agent Forums (Phase 5 — Role 5: LLM-in-loop experimental mode)
+// ---------------------------------------------------------------------------
+
+/**
+ * runForumStep — POST /api/simulation/forum_step with current forum settings.
+ *
+ * This is the entry point triggered by the "Run Forum Step" button.
+ * After the forum completes the full log is refreshed so the new session
+ * appears in the transcript panel.
+ */
+async function runForumStep() {
+  const fraction = parseInt(document.getElementById('forum-fraction').value) / 100;
+  const groupSize = parseInt(document.getElementById('forum-group-size').value);
+  const numTurns = parseInt(document.getElementById('forum-num-turns').value);
+
+  const btn = document.getElementById('btn-forum-step');
+  const status = document.getElementById('forum-status');
+  btn.disabled = true;
+  status.style.display = 'block';
+
+  try {
+    const res = await fetch('/api/simulation/forum_step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        forum_fraction: fraction,
+        group_size: groupSize,
+        num_turns: numTurns,
+      }),
+    });
+
+    if (res.status === 503) {
+      alert('Ollama is not running. Start it with: ollama serve');
+      return;
+    }
+    if (!res.ok) {
+      const err = await res.json();
+      alert('Forum error: ' + (err.error || 'Unknown error'));
+      return;
+    }
+
+    // Reload the full forum log so all sessions (including the new one) render.
+    await loadForumLog();
+    // Refresh charts — the forum may have nudged agent preferences.
+    await fetchAndUpdateCharts();
+  } catch (e) {
+    console.error('runForumStep error:', e);
+    alert('Could not reach the server. Is it running?');
+  } finally {
+    btn.disabled = false;
+    status.style.display = 'none';
+    // Re-enable only if model is still initialised
+    updateStatusBar();
+  }
+}
+
+/**
+ * loadForumLog — Fetch GET /api/simulation/forum_log and render all sessions.
+ *
+ * Called after each forum step and also when the page is refreshed with an
+ * active simulation. Renders each ForumSession as a collapsible card showing
+ * the full dialogue transcript and the norm-update delta applied.
+ */
+async function loadForumLog() {
+  try {
+    const res = await fetch('/api/simulation/forum_log');
+    if (!res.ok) return;  // 409 = no model; silently skip
+    const data = await res.json();
+    const sessions = data.forum_sessions || [];
+
+    const container = document.getElementById('forum-log');
+    const empty = document.getElementById('forum-empty');
+
+    if (sessions.length === 0) {
+      empty.style.display = 'block';
+      // Remove any previously rendered session cards.
+      container.querySelectorAll('.forum-session').forEach(el => el.remove());
+      return;
+    }
+
+    empty.style.display = 'none';
+    // Remove old cards and re-render so the list stays consistent.
+    container.querySelectorAll('.forum-session').forEach(el => el.remove());
+
+    // Render newest session first.
+    [...sessions].reverse().forEach((session, idx) => {
+      const card = _buildForumSessionCard(session, sessions.length - idx);
+      container.appendChild(card);
+    });
+
+    // Auto-expand the newest (first) session card.
+    const first = container.querySelector('.forum-session-body');
+    if (first) first.classList.add('open');
+  } catch (e) {
+    console.error('loadForumLog error:', e);
+  }
+}
+
+/**
+ * _buildForumSessionCard — Build the DOM element for one ForumSession.
+ *
+ * @param {Object} session - ForumSession dict from the API
+ * @param {number} sessionNum - Display number (1-indexed)
+ * @returns {HTMLElement}
+ */
+function _buildForumSessionCard(session, sessionNum) {
+  const elapsed = session.elapsed_seconds
+    ? ` · ${session.elapsed_seconds.toFixed(1)}s` : '';
+
+  const card = document.createElement('div');
+  card.className = 'forum-session';
+
+  // Collapsible header
+  const header = document.createElement('div');
+  header.className = 'forum-session-header';
+  header.innerHTML = `
+    <span><strong>Session ${sessionNum}</strong> — Simulation day ${session.step}</span>
+    <span class="forum-session-meta">
+      ${session.n_agents_participating} agents ·
+      ${(session.groups || []).length} groups ·
+      ${session.total_norm_updates} updates${elapsed}
+    </span>
+    <span style="color:var(--light-muted);font-size:14px">▾</span>
+  `;
+  header.onclick = () => {
+    const body = card.querySelector('.forum-session-body');
+    body.classList.toggle('open');
+    header.querySelector('span:last-child').textContent =
+      body.classList.contains('open') ? '▴' : '▾';
+  };
+
+  const body = document.createElement('div');
+  body.className = 'forum-session-body';
+
+  (session.groups || []).forEach((group, gi) => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'forum-group';
+
+    const agentIds = (group.agent_ids || []).map(id => `#${id % 100}`).join(', ');
+    groupEl.innerHTML = `<div class="forum-group-header">Group ${gi + 1} — Agents ${agentIds}</div>`;
+
+    // Dialogue turns
+    (group.turns || []).forEach(turn => {
+      const turnEl = document.createElement('div');
+      turnEl.className = 'forum-turn';
+      turnEl.innerHTML = `
+        <div class="forum-speaker">Resident #${turn.speaker_id % 100}</div>
+        <div class="forum-content">${_escapeHtml(turn.content)}</div>
+      `;
+      groupEl.appendChild(turnEl);
+    });
+
+    // Outcome (norm signal and delta)
+    if (group.outcome) {
+      const o = group.outcome;
+      const delta = group.delta_applied || 0;
+      const deltaClass = delta > 0 ? 'positive' : delta < 0 ? 'negative' : '';
+      const deltaSign = delta > 0 ? '+' : '';
+      const dirLabel = o.norm_signal > 0.1 ? '▲ toward delegation'
+                     : o.norm_signal < -0.1 ? '▼ toward autonomy' : '↔ no clear shift';
+      groupEl.innerHTML += `
+        <div class="forum-outcome">
+          <div class="forum-outcome-summary">
+            <strong>Consensus:</strong> ${_escapeHtml(o.summary)}
+          </div>
+          <div class="forum-delta ${deltaClass}">
+            norm_signal: ${o.norm_signal.toFixed(2)} · confidence: ${o.confidence.toFixed(2)} →
+            Δ pref: <strong>${deltaSign}${delta.toFixed(4)}</strong> ${dirLabel}
+          </div>
+        </div>
+      `;
+    } else {
+      groupEl.innerHTML += `<div style="font-size:10px;color:var(--light-muted);margin-top:4px">
+        Outcome extraction failed — LLM may be offline.
+      </div>`;
+    }
+
+    body.appendChild(groupEl);
+  });
+
+  card.appendChild(header);
+  card.appendChild(body);
+  return card;
+}
+
+/** clearForumLog — Remove all rendered session cards and show the empty state. */
+function clearForumLog() {
+  const container = document.getElementById('forum-log');
+  container.querySelectorAll('.forum-session').forEach(el => el.remove());
+  document.getElementById('forum-empty').style.display = 'block';
+}
+
+/** _escapeHtml — Escape user-visible strings to prevent XSS in innerHTML. */
+function _escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ---------------------------------------------------------------------------
 // Page initialisation
 // ---------------------------------------------------------------------------
 
@@ -650,6 +853,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load run history on page load
   loadRunHistory();
+
+  // Load forum log (shows sessions from the current server-side simulation if any)
+  loadForumLog();
 
   // Check LLM status and update chat toggle indicator
   checkLlmStatus();
