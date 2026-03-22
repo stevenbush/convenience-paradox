@@ -220,11 +220,15 @@ class ResultInterpretation(BaseModel):
 
     A narrative explanation of simulation results in response to a user question.
     Structured to ensure the LLM provides both an answer and a reasoning trace.
+
+    All fields except `answer` have defaults to tolerate LLM outputs that omit
+    optional fields despite constrained decoding (observed with Qwen 3.5 4B).
     """
     answer: str = Field(
         description="Direct, concise answer to the user's question (1–3 sentences).",
     )
     detailed_explanation: str = Field(
+        default="",
         description="Longer explanation of what the data shows and why (2–4 sentences).",
     )
     hypothesis_connection: str = Field(
@@ -241,15 +245,20 @@ class VisualizationAnnotation(BaseModel):
     """Output schema for Role 4 — Visualization Annotator.
 
     Auto-generated caption and insight for a dashboard chart.
+
+    All fields have defaults to tolerate partial LLM outputs gracefully.
     """
     chart_title: str = Field(
+        default="",
         description="A clear, descriptive title for the chart (max 60 chars).",
         max_length=60,
     )
     caption: str = Field(
+        default="",
         description="2–3 sentence caption explaining what the chart shows.",
     )
     key_insight: str = Field(
+        default="",
         description="The single most important observation from this chart (1 sentence).",
     )
     hypothesis_tag: Optional[str] = Field(

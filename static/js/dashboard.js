@@ -48,6 +48,10 @@ let currentParams = {
 // Track which preset is active so we can highlight the button.
 let activePreset = null;
 
+// Guard flag: suppresses the "revert to Custom" behaviour in onSliderChange
+// while applyPreset is programmatically updating slider values.
+let _applyingPreset = false;
+
 // Overlay traces for past runs (run_id → {name, color, data})
 const overlayRuns = {};
 
@@ -389,13 +393,13 @@ async function runSimulation() {
       alert('Run failed: ' + (err.error || 'Unknown error'));
       return;
     }
-    const data = await res.json();
-    // The run endpoint returns full model_data; update charts directly.
-    updateAllCharts(data.model_data, null);
-    await fetchAndUpdateCharts(); // Reload agent states for distribution charts.
+    const runResult = await res.json();
+    // Fetch full data including agent_states (the run endpoint omits them),
+    // so histograms render alongside time-series charts.
+    await fetchAndUpdateCharts();
     await loadRunHistory();
     // LLM Role 4: annotate all charts with key insights (non-blocking).
-    annotateDashboard(data.model_data, activePreset);
+    annotateDashboard(runResult.model_data, activePreset);
   } finally {
     btn.disabled = false;
     btn.textContent = '▶▶ Run';
@@ -408,6 +412,11 @@ async function resetSimulation() {
   await fetch('/api/simulation/reset', { method: 'POST' });
   clearOverlays();
   initCharts();
+  // Clear LLM annotations from the previous run.
+  document.querySelectorAll('.chart-annotation').forEach(el => {
+    el.innerHTML = '';
+    el.classList.remove('visible');
+  });
   document.getElementById('sim-dot').className = 'status-dot';
   document.getElementById('sim-status-text').textContent = 'Not initialised';
   document.getElementById('step-counter').textContent = '—';
@@ -444,7 +453,9 @@ async function applyPreset(presetName) {
     if (!preset) return;
     const params = preset.params;
 
-    // Apply preset values to sliders and currentParams
+    // Apply preset values to sliders and currentParams.
+    // Guard prevents onSliderChange from reverting activePreset to 'custom'.
+    _applyingPreset = true;
     const sliderMap = {
       delegation_preference_mean: 'delegation_preference_mean',
       service_cost_factor: 'service_cost_factor',
@@ -459,7 +470,8 @@ async function applyPreset(presetName) {
         if (slider) slider.value = params[key];
       }
     }
-    // Also update the hidden params
+    _applyingPreset = false;
+    // Also update the hidden params (adaptation_rate, stress_recovery_rate, etc.)
     Object.assign(currentParams, params);
     currentParams.seed = params.seed || 42;
   } catch (e) { console.error('applyPreset error:', e); }
@@ -476,8 +488,9 @@ function onSliderChange(param, value) {
   currentParams[param] = numVal;
   const display = document.getElementById(`val-${param}`);
   if (display) display.textContent = Number.isInteger(numVal) ? numVal : numVal.toFixed(2);
-  // Selecting a custom slider deactivates any preset
-  if (activePreset !== 'custom') {
+  // When the USER manually moves a slider, deactivate the preset.
+  // Skip this when applyPreset is programmatically setting slider values.
+  if (!_applyingPreset && activePreset !== 'custom') {
     activePreset = 'custom';
     document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('preset-custom').classList.add('active');
@@ -594,6 +607,7 @@ async function annotateDashboard(modelData, preset) {
         if (el) {
           el.innerHTML = `<strong>${ann.key_insight}</strong>` +
             (ann.caption ? ` <span style="color:var(--light-muted)">${ann.caption}</span>` : '');
+          el.classList.add('visible');
         }
       }
     }
