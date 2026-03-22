@@ -41,3 +41,6 @@ data/results/*.db
 
 # OS
 Thumbs.db
+
+# Ignore local analysis notes
+docs/Data_Source_Analysis.md

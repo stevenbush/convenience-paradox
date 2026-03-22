@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<!--
+  templates/index.html — Main Dashboard Page
+  
+  This is the single-page dashboard for The Convenience Paradox.
+  It is served by Flask's render_template("index.html") at GET /.
+  
+  Layout:
+    #header    — Fixed top bar: title, step counter, status badges
+    #sidebar   — Fixed left panel: preset buttons, parameter sliders, controls
+    #main      — Scrollable main area: chart grid, run history panel
+    #chat-panel — Floating LLM chat widget (activated in Phase 4)
+  
+  All dynamic content is driven by static/js/dashboard.js via fetch() calls
+  to the Flask REST API (api/routes.py). The page itself is stateless HTML.
+  
+  Flask endpoints consumed by this page:
+    GET  /api/presets          — populate preset buttons
+    GET  /api/parameters       — build parameter sliders dynamically
+    GET  /api/simulation/status — header step counter and status badges
+    POST /api/simulation/init  — Initialise button
+    POST /api/simulation/step  — Step button
+    POST /api/simulation/run   — Run button
+    POST /api/simulation/reset — Reset button
+    GET  /api/simulation/data  — refresh all charts
+    GET  /api/runs             — populate run history table
+    GET  /api/runs/<id>        — load a past run for overlay
+  
+  LLM chat endpoints (Phase 4, api/llm_service.py):
+    POST /api/llm/interpret    — Role 3: Result Interpreter
+    POST /api/llm/parse_scenario — Role 1: Scenario Parser
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Convenience Paradox — ABM Dashboard</title>
+
+  <!-- Plotly.js: interactive charts. Loaded from CDN for zero build step. -->
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+  <!-- Project stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- ============================================================
+     HEADER — Fixed top bar
+     Purpose: title, global status indicators, step counter
+     ============================================================ -->
+<header id="header">
+  <div class="title">The Convenience Paradox</div>
+  <div class="subtitle">Agent-Based Model of Service Delegation &amp; Social Involution</div>
+
+  <!-- Status bar: shows whether a simulation is initialised and how many steps have run -->
+  <div id="status-bar">
+    <div class="status-badge">
+      <span class="status-dot" id="sim-dot"></span>
+      <span id="sim-status-text">Not initialised</span>
+    </div>
+    <div class="status-badge">
+      <span>Step:</span>
+      <span id="step-counter" style="font-family:var(--font-mono);color:var(--accent)">—</span>
+    </div>
+  </div>
+</header>
+
+<!-- ============================================================
+     SIDEBAR — Fixed left panel
+     Purpose: preset selection, parameter sliders, simulation controls
+     Driven by: api/presets, api/parameters (dynamic slider generation)
+     ============================================================ -->
+<aside id="sidebar">
+
+  <!-- Preset selector: Type A, Type B, Custom -->
+  <div class="sidebar-card">
+    <h3>Society Preset</h3>
+    <div class="preset-buttons">
+      <!-- Type A button: autonomy-oriented society -->
+      <button class="preset-btn type-a" id="preset-type-a" onclick="applyPreset('type_a')">
+        <strong>Type A — Autonomy-Oriented</strong>
+        <div class="preset-desc" id="desc-type-a">Low delegation · High service cost · Low conformity</div>
+      </button>
+      <!-- Type B button: convenience-oriented society -->
+      <button class="preset-btn type-b" id="preset-type-b" onclick="applyPreset('type_b')">
+        <strong>Type B — Convenience-Oriented</strong>
+        <div class="preset-desc" id="desc-type-b">High delegation · Low service cost · High conformity</div>
+      </button>
+      <!-- Custom: use current slider values -->
+      <button class="preset-btn" id="preset-custom" onclick="applyPreset('custom')">
+        <strong>Custom</strong>
+        <div class="preset-desc">Use current slider values</div>
+      </button>
+    </div>
+  </div>
+
+  <!-- Parameter sliders — populated dynamically by dashboard.js using /api/parameters -->
+  <div class="sidebar-card">
+    <h3>Parameters</h3>
+    <!-- Key sliders rendered here by buildSliders() in dashboard.js.
+         Only the most research-relevant parameters are shown as sliders;
+         others use preset defaults. -->
+    <div class="param-group" id="param-sliders">
+      <!-- Delegation Preference Mean — primary H1/H4 test variable -->
+      <div class="param-row">
+        <div class="param-label">
+          <span>Delegation Preference</span>
+          <span class="param-value" id="val-delegation_preference_mean">0.50</span>
+        </div>
+        <input type="range" id="slider-delegation_preference_mean"
+               min="0.05" max="0.95" step="0.05" value="0.50"
+               oninput="onSliderChange('delegation_preference_mean', this.value)">
+      </div>
+      <!-- Service Cost Factor — economic barrier to delegation -->
+      <div class="param-row">
+        <div class="param-label">
+          <span>Service Cost Factor</span>
+          <span class="param-value" id="val-service_cost_factor">0.40</span>
+        </div>
+        <input type="range" id="slider-service_cost_factor"
+               min="0.05" max="1.00" step="0.05" value="0.40"
+               oninput="onSliderChange('service_cost_factor', this.value)">
+      </div>
+      <!-- Social Conformity Pressure — peer influence on norm adoption -->
+      <div class="param-row">
+        <div class="param-label">
+          <span>Conformity Pressure</span>
+          <span class="param-value" id="val-social_conformity_pressure">0.30</span>
+        </div>
+        <input type="range" id="slider-social_conformity_pressure"
+               min="0.00" max="1.00" step="0.05" value="0.30"
+               oninput="onSliderChange('social_conformity_pressure', this.value)">
+      </div>
+      <!-- Tasks per Day — overall workload; higher values stress the service economy -->
+      <div class="param-row">
+        <div class="param-label">
+          <span>Daily Task Load</span>
+          <span class="param-value" id="val-tasks_per_step_mean">2.50</span>
+        </div>
+        <input type="range" id="slider-tasks_per_step_mean"
+               min="1.00" max="5.00" step="0.25" value="2.50"
+               oninput="onSliderChange('tasks_per_step_mean', this.value)">
+      </div>
+      <!-- Number of agents -->
+      <div class="param-row">
+        <div class="param-label">
+          <span>Number of Agents</span>
+          <span class="param-value" id="val-num_agents">100</span>
+        </div>
+        <input type="range" id="slider-num_agents"
+               min="20" max="300" step="10" value="100"
+               oninput="onSliderChange('num_agents', this.value)">
+      </div>
+    </div>
+  </div>
+
+  <!-- Simulation controls: Init, Step, Run, Reset -->
+  <div class="sidebar-card">
+    <h3>Simulation Controls</h3>
+    <div class="control-buttons">
+      <!-- Initialise: creates a new model with current parameters -->
+      <button class="ctrl-btn primary" id="btn-init" onclick="initSimulation()">
+        ⚡ Initialise
+      </button>
+      <!-- Step ×1: advance one day -->
+      <button class="ctrl-btn" id="btn-step1" onclick="stepSimulation(1)" disabled>
+        ▶ Step ×1
+      </button>
+      <!-- Step ×10: advance ten days -->
+      <button class="ctrl-btn" id="btn-step10" onclick="stepSimulation(10)" disabled>
+        ▶ Step ×10
+      </button>
+      <!-- Run: advance to max_steps -->
+      <button class="ctrl-btn primary" id="btn-run" onclick="runSimulation()" disabled>
+        ▶▶ Run
+      </button>
+      <!-- Reset: clear the model -->
+      <button class="ctrl-btn danger" id="btn-reset" onclick="resetSimulation()" disabled>
+        ↺ Reset
+      </button>
+    </div>
+    <!-- Steps to run field (used by the Run button) -->
+    <div class="steps-input-row">
+      <label for="run-steps">Run for</label>
+      <input type="number" id="run-steps" value="50" min="1" max="500">
+      <label>steps</label>
+    </div>
+    <!-- Run label for SQLite persistence -->
+    <div class="steps-input-row" style="margin-top:6px">
+      <label for="run-label">Label</label>
+      <input type="text" id="run-label" placeholder="optional"
+             style="flex:1;background:var(--dark-bg);border:1px solid var(--dark-border);
+                    border-radius:4px;color:var(--dark-text);font-size:11px;padding:3px 6px">
+    </div>
+  </div>
+
+  <!-- Neutrality notice in sidebar footer -->
+  <div class="neutrality-notice" style="color:var(--dark-muted);font-size:9px;padding:4px 0">
+    "Type A" and "Type B" are abstract configurations.<br>
+    This model does not characterise any specific society.
+  </div>
+
+</aside>
+
+<!-- ============================================================
+     MAIN CONTENT — Scrollable chart area
+     Purpose: research visualisations and run history
+     ============================================================ -->
+<main id="main">
+
+  <!-- Chart grid: 4 charts in 2×2 layout
+       Each chart card includes a hypothesis tag showing which H it addresses.
+       Chart titles and captions are updated by LLM Role 4 (Phase 4). -->
+  <div class="charts-grid">
+
+    <!-- Chart 1 (full width): Primary time-series — stress, delegation, efficiency
+         This is the central research chart. It shows all three primary outcome
+         metrics on one plot, allowing the user to see how they co-evolve.
+         Addresses H1 (labour), H3 (stress), H4 (delegation drift). -->
+    <div class="chart-card chart-full">
+      <h4>
+        System Dynamics Over Time
+        <span class="chart-hypothesis-tag">H1 · H3 · H4</span>
+      </h4>
+      <div class="chart-container" id="chart-timeseries"></div>
+      <!-- LLM-generated caption appears here (Phase 4, Role 4) -->
+      <div class="chart-annotation" id="ann-timeseries"></div>
+    </div>
+
+    <!-- Chart 2: Total labour hours over time
+         Primary H1 test: does higher delegation increase total system labour?
+         Involution manifests as rising total hours despite delegation. -->
+    <div class="chart-card">
+      <h4>
+        Total System Labour Hours
+        <span class="chart-hypothesis-tag">H1</span>
+      </h4>
+      <div class="chart-container" id="chart-labour"></div>
+      <div class="chart-annotation" id="ann-labour"></div>
+    </div>
+
+    <!-- Chart 3: Social efficiency over time
+         Tracks useful task output per collective labour hour.
+         Involution = falling efficiency as overhead rises. Addresses H2. -->
+    <div class="chart-card">
+      <h4>
+        Social Efficiency (Tasks per Labour-Hour)
+        <span class="chart-hypothesis-tag">H2</span>
+      </h4>
+      <div class="chart-container" id="chart-efficiency"></div>
+      <div class="chart-annotation" id="ann-efficiency"></div>
+    </div>
+
+    <!-- Chart 4: Agent stress distribution histogram (current step)
+         Shows the distribution of well-being across the population.
+         H3: autonomy-oriented should show lower stress and narrower spread. -->
+    <div class="chart-card">
+      <h4>
+        Agent Stress Distribution (Current Step)
+        <span class="chart-hypothesis-tag">H3</span>
+      </h4>
+      <div class="chart-container" id="chart-stress-dist"></div>
+      <div class="chart-annotation" id="ann-stress-dist"></div>
+    </div>
+
+    <!-- Chart 5: Delegation preference distribution histogram (current step)
+         Shows whether the society is converging to delegation or autonomy.
+         H4: moderate-delegation societies should drift toward one extreme. -->
+    <div class="chart-card">
+      <h4>
+        Delegation Preference Distribution (Current Step)
+        <span class="chart-hypothesis-tag">H4</span>
+      </h4>
+      <div class="chart-container" id="chart-delegation-dist"></div>
+      <div class="chart-annotation" id="ann-delegation-dist"></div>
+    </div>
+
+    <!-- Chart 6: Income Gini over time — inequality tracker
+         Shows whether the delegation economy concentrates income. -->
+    <div class="chart-card">
+      <h4>
+        Income Inequality (Gini Coefficient)
+        <span class="chart-hypothesis-tag">Exploratory</span>
+      </h4>
+      <div class="chart-container" id="chart-gini"></div>
+      <div class="chart-annotation" id="ann-gini"></div>
+    </div>
+
+  </div>
+
+  <!-- Run history panel: lists saved SQLite runs for comparison
+       Driven by GET /api/runs. Each row has an "Overlay" button that
+       fetches /api/runs/<id> and adds a trace to the time-series chart. -->
+  <div id="run-history">
+    <h4>Run History <span style="font-size:10px;font-weight:400;color:var(--light-muted)">(saved runs — click Overlay to compare)</span></h4>
+    <table id="runs-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Date</th>
+          <th>Label / Preset</th>
+          <th>Steps</th>
+          <th>Final Stress</th>
+          <th>Final Delegation</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="runs-tbody">
+        <tr><td colspan="7" style="text-align:center;color:var(--light-muted);padding:12px">
+          No saved runs yet. Run a simulation and it will appear here.
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<!-- ============================================================
+     LLM CHAT PANEL — Floating panel (Phase 4)
+     Purpose: Role 1 (Scenario Parser) + Role 3 (Result Interpreter)
+     Hidden by default; revealed by the chat toggle button.
+     All API calls go to /api/llm/* endpoints (api/llm_service.py).
+     ============================================================ -->
+<div id="chat-panel">
+  <div style="display:flex;align-items:center;justify-content:space-between;
+              padding:10px 14px;border-bottom:1px solid var(--light-border);
+              background:var(--dark-bg);color:var(--dark-text);border-radius:6px 6px 0 0">
+    <span style="font-weight:600;font-size:13px">🤖 AI Assistant</span>
+    <span style="font-size:10px;color:var(--dark-muted)">Qwen 3.5 4B · local</span>
+    <button onclick="toggleChat()" style="background:none;border:none;
+            color:var(--dark-muted);cursor:pointer;font-size:16px">✕</button>
+  </div>
+  <!-- Chat message history -->
+  <div id="chat-messages" style="flex:1;overflow-y:auto;padding:12px;
+       display:flex;flex-direction:column;gap:8px">
+    <div style="font-size:11px;color:var(--light-muted);text-align:center;padding:20px 0">
+      Ask a question about the simulation results, or describe a scenario<br>
+      to generate new parameters.<br><br>
+      <em>Examples:</em><br>
+      "Why is stress rising in the Type B run?"<br>
+      "Set up a scenario with very cheap services and strong social pressure"
+    </div>
+  </div>
+  <!-- Chat input row -->
+  <div style="display:flex;gap:6px;padding:10px;border-top:1px solid var(--light-border)">
+    <input type="text" id="chat-input" placeholder="Ask about results or describe a scenario…"
+           style="flex:1;padding:7px 10px;border:1px solid var(--light-border);border-radius:4px;
+                  font-size:12px;outline:none"
+           onkeydown="if(event.key==='Enter') sendChatMessage()">
+    <button onclick="sendChatMessage()"
+            style="padding:7px 12px;background:var(--accent);border:none;
+                   border-radius:4px;color:white;cursor:pointer;font-size:12px">
+      Send
+    </button>
+  </div>
+</div>
+
+<!-- Chat toggle button (always visible in bottom-right corner) -->
+<button id="chat-toggle" onclick="toggleChat()" title="Open AI Assistant">
+  💬
+</button>
+
+<!-- ============================================================
+     JavaScript: load dashboard logic and chat widget
+     ============================================================ -->
+<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/chat.js"></script>
+
+</body>
+</html>

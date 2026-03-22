@@ -26,18 +26,21 @@ Before writing any code, always read the relevant phase plan from `docs/plans/`.
 
 | Phase | Plan File | Status |
 |-------|-----------|--------|
-| Phase 1 — Foundation | `docs/plans/01_phase1_foundation.md` | Complete |
-| Phase 2 — Simulation Engine | `docs/plans/02_phase2_simulation.md` | Next |
-| Phase 3 — Web Interface | `docs/plans/03_phase3_web_interface.md` | Pending |
-| Phase 4 — LLM Integration | `docs/plans/04_phase4_llm_integration.md` | Pending |
-| Phase 5 — Agent Forums | `docs/plans/05_phase5_agent_forums.md` | Pending |
-| Phase 6 — Analysis & Portfolio | `docs/plans/06_phase6_analysis_portfolio.md` | Pending |
+| Phase 1 — Foundation | `docs/plans/01_phase1_foundation.md` | ✅ Complete |
+| Phase 2 — Simulation Engine | `docs/plans/02_phase2_simulation.md` | ✅ Complete |
+| Phase 3 — Web Interface | `docs/plans/03_phase3_web_interface.md` | ✅ Complete |
+| Phase 4 — LLM Integration | `docs/plans/04_phase4_llm_integration.md` | ✅ Complete |
+| Phase 5 — Agent Forums | `docs/plans/05_phase5_agent_forums.md` | ✅ Complete |
+| Phase 6 — Analysis & Portfolio | `docs/plans/06_phase6_analysis_portfolio.md` | ✅ Complete |
 
 Master plan: `docs/plans/00_master_plan.md`
 
 ### 2.2 Pause Points
 
-**Do not proceed to the next phase without explicit user instruction.** Each phase boundary is a pause point. When a phase is complete, report its deliverable and stop. Do not auto-advance.
+**Do not proceed to the next phase without explicit user instruction.** Each phase boundary is a pause point. When a phase is complete:
+1. Update the phase status table above.
+2. Append the phase's execution record to `docs/execution_log.md` (see §11).
+3. Report the deliverables summary to the user and stop. Do not auto-advance.
 
 ### 2.3 Do Not Modify Plan Files
 
@@ -75,13 +78,18 @@ Ollama runs as a background service (`brew services start ollama`), served at `h
 **Qwen 3.5 4B has a thinking mode** that consumes tokens before producing output. Use `think=False` in `ollama.chat()` for structured JSON output (faster, cleaner). Use `think=True` (default) or omit for narrative interpretation tasks where reasoning quality matters.
 
 ```python
-# Structured output -- disable thinking
+# Structured output — disable thinking
 ollama.chat(model="qwen3.5:4b", messages=[...], think=False,
             format=MyPydanticModel.model_json_schema())
 
-# Narrative/interpretation -- allow thinking
+# Narrative/interpretation — allow thinking
 ollama.chat(model="qwen3.5:4b", messages=[...], options={"num_predict": 512})
 ```
+
+**Mesa 3.x API notes** (confirmed during Phase 1–2):
+- Space module: `import mesa.space` (not `mesa.spaces`)
+- Model seed: `Model(rng=42)` (not deprecated `seed=42`)
+- Scheduling: `self.agents.shuffle_do("method_name")` (not old Scheduler classes)
 
 ### 3.3 Hardware
 
@@ -104,6 +112,7 @@ convenience-paradox/
   tests/          # Unit tests
   docs/
     plans/        # All execution plan documents
+    execution_log.md  # Phase-by-phase execution records (see §11)
 ```
 
 ### 4.1 Technology Stack
@@ -143,23 +152,28 @@ File: `model/agents.py`
 | `delegation_preference` | float [0,1] | 0 = always self-serve; 1 = always delegate |
 | `stress_level` | float [0,1] | Accumulates when time is scarce |
 | `task_queue` | list | Daily tasks to resolve each step |
-| `income` | float | Earnings from providing services to others |
-| `is_service_provider` | bool | Whether agent accepts delegated tasks |
+| `income` | float | Net earnings (service income minus delegation fees) |
+| `time_spent_providing` | float | Cumulative hours spent serving others |
 
 **Decision rules (all explicit, parameterized — no hidden LLM logic):**
-1. Task generation: each step, agents receive tasks of varying complexity
+1. Task generation: each step, agents receive 1–5 tasks drawn from Gaussian distribution
 2. Self-serve vs. delegate: based on `delegation_preference`, skill level, time budget, and service cost
-3. Service acceptance: provider agents accept tasks → earn income but spend time
-4. Stress accumulation: `available_time` below personal threshold → `stress_level` increases
-5. Preference adaptation: `delegation_preference` shifts based on stress and peer behaviour (social conformity)
+3. Service matching: model-level greedy pool matching (most-available-time-first)
+4. Stress accumulation: `available_time` below `stress_threshold` → `stress_level` increases
+5. Preference adaptation: `delegation_preference` shifts based on stress and peer behaviour (social conformity via network neighbours)
 
 ### 5.4 Model: `ConvenienceParadoxModel`
 
-File: `model/model.py` — Mesa `Model` subclass.
+File: `model/model.py` — Mesa `Model` subclass. Three-phase step:
+`generate_and_decide` → `_run_service_matching` → `update_state`
 
-**DataCollector metrics:**
-- Agent-level: `available_time`, `stress_level`, `delegation_preference`, `income`, `tasks_completed_self`, `tasks_delegated`
-- Model-level: `avg_stress`, `total_labor_hours`, `avg_delegation_rate`, `social_efficiency`, `gini_coefficient`
+**DataCollector metrics (9 model-level):**
+`avg_stress`, `avg_delegation_rate`, `total_labor_hours`, `social_efficiency`,
+`gini_income`, `gini_available_time`, `tasks_delegated_frac`, `unmatched_tasks`, `avg_income`
+
+**DataCollector metrics (7 agent-level):**
+`available_time`, `stress_level`, `delegation_preference`, `income`,
+`tasks_completed_self`, `tasks_delegated`, `time_spent_providing`
 
 ### 5.5 Parameter Presets
 
@@ -167,8 +181,8 @@ File: `model/params.py`
 
 | Preset | Label | Key characteristics |
 |--------|-------|---------------------|
-| `TYPE_A_PRESET` | Autonomy-Oriented | Low delegation preference, moderate service cost, low conformity |
-| `TYPE_B_PRESET` | Convenience-Oriented | High delegation preference, low service cost, high conformity |
+| `TYPE_A_PRESET` | Autonomy-Oriented | delegation_mean=0.25, service_cost=0.65, conformity=0.15 |
+| `TYPE_B_PRESET` | Convenience-Oriented | delegation_mean=0.72, service_cost=0.20, conformity=0.65 |
 | `CUSTOM` | User-defined | Via dashboard sliders or LLM scenario parser |
 
 Presets are informed by ILO, WVS, and OECD stylized facts. They do not calibrate to empirical data.
@@ -228,39 +242,26 @@ This is a strict requirement. Violations must never appear in code, comments, do
 
 ### 8.0 POC Commenting Philosophy
 
-This project is a **Proof of Concept and learning/demonstration exercise**. Code must therefore be written to be read and understood by others — including researchers who may be unfamiliar with the specific libraries or techniques used. Apply the following commenting standards throughout:
+This project is a **Proof of Concept and learning/demonstration exercise**. Code must be written to be read and understood by others — including researchers unfamiliar with the libraries used.
 
-**Module-level docstrings**: Every `.py` file begins with a module docstring explaining the file's role within the overall architecture and how it relates to the simulation design.
-
-**Class-level docstrings**: Every class (especially `Resident`, `ConvenienceParadoxModel`) includes a docstring explaining its conceptual role in the model, not just its technical function. For agents, explain what the class represents in the social simulation.
-
-**Method/function docstrings**: All public functions use Google-style docstrings with a one-line summary, an `Args` block, a `Returns` block, and a `Note` or `Design` section where the choice of algorithm or formula is non-obvious.
-
-**Inline comments for model logic**: Agent decision rules, formula choices, and parameter interactions must be commented with the *social science rationale*, not just the mathematics. For example:
-```python
-# Agents with higher stress are more likely to delegate to save time,
-# even if it costs more — modelling the "convenience trap" feedback loop.
-delegation_boost = self.stress_level * self.conformity_sensitivity
-```
-
-**Section headers in long functions**: Use comment banners (`# --- Phase: Task Generation ---`) to segment the logical phases of complex step functions.
-
-**JavaScript**: Every Plotly chart definition includes a comment explaining what the chart is intended to show in the context of the research hypotheses.
-
-**HTML templates**: Comment each major UI section with its purpose and which Flask endpoint or JS function drives it.
+- **Module-level docstrings**: Every `.py` file explains its role in the architecture.
+- **Class-level docstrings**: Every class explains its conceptual role in the social simulation.
+- **Method docstrings**: Google style — one-line summary, Args, Returns, and a Note where the formula or design choice is non-obvious.
+- **Inline comments**: Explain the *social science rationale*, not what the code mechanically does.
+- **Section headers**: Use `# --- Section Name ---` banners to segment long functions.
+- **JavaScript**: Every Plotly chart definition comments which hypothesis it informs.
+- **HTML templates**: Comment each major UI section with its purpose and which endpoint/JS drives it.
 
 ### 8.1 General
 
 - **Python 3.12**. Type hints on all public function signatures.
-- **Docstrings** on all public classes and methods (Google style: one-line summary, Args, Returns).
-- Inline comments explain *why* (social science rationale, formula derivation, design trade-offs), not *what* the code mechanically does.
-- No debug `print()` statements in committed code. Use `logging` if runtime output is needed.
+- No debug `print()` statements in committed code. Use `logging`.
 
 ### 8.2 Mesa-Specific
 
-- Use Mesa 3.x API. The agent scheduling API changed from 2.x — use `AgentSet`, not the old `Scheduler` classes.
-- `DataCollector` is the only sanctioned way to collect simulation data. Do not accumulate data in model-level lists.
-- Keep `model.step()` thin — agent logic lives in `agent.step()`.
+- Use Mesa 3.x API: `AgentSet.shuffle_do()`, `mesa.space.NetworkGrid`, `Model(rng=seed)`.
+- `DataCollector` is the only sanctioned way to collect simulation data.
+- Keep `model.step()` thin — agent logic lives in agent methods.
 
 ### 8.3 Flask-Specific
 
@@ -285,75 +286,59 @@ delegation_boost = self.stress_level * self.conformity_sensitivity
 
 ## 9. Analysis and Documentation Standards
 
-This section governs all hypothesis testing, experimental analysis, and results documentation. Because this is a POC and demonstration project, every analytical output must stand alone as a readable, self-explanatory artefact.
-
 ### 9.1 Hypothesis Testing
 
-Each hypothesis (H1–H4) must be addressed with a dedicated analysis block containing:
-
-1. **Hypothesis restatement**: Quote the hypothesis verbatim from the master plan.
-2. **Experimental design**: Describe which parameters were varied, what was held constant, the number of runs, and the number of simulation steps per run.
-3. **Results**: Present the key metrics (tables or plots) with axis labels and units.
-4. **Interpretation**: Written prose explaining what the data shows and whether it supports or refutes the hypothesis. Do not let charts speak for themselves.
-5. **Limitations**: Note any caveats — e.g., sensitivity to initial conditions, parameter ranges not tested, model simplifications that may affect the conclusion.
+Each hypothesis (H1–H4) must be addressed with:
+1. Hypothesis restatement (verbatim from master plan)
+2. Experimental design (parameters varied, held constant, number of runs, steps)
+3. Results (key metrics with axis labels and units)
+4. Interpretation (written prose — do not let charts speak for themselves)
+5. Limitations (caveats, untested ranges, model simplifications)
 
 ### 9.2 Sensitivity Analysis
 
-Parameter sweep outputs (heatmaps, phase diagrams) must include:
-
-- A caption explaining the axes and colour scale in plain language.
-- A written paragraph identifying the most influential parameters and the direction of their effect.
-- Explicit identification of any threshold or bifurcation point observed (e.g., the involution threshold for H2).
+Parameter sweep outputs must include a caption (axes + colour scale), a written paragraph on the most influential parameters, and explicit identification of any threshold or bifurcation point.
 
 ### 9.3 Scenario Comparison (Type A vs. Type B)
 
-Side-by-side comparisons must include:
-
-- A parameter table showing the exact values used for each preset.
-- An explanation of how those values were informed by empirical stylised facts (ILO, OECD, WVS).
-- Metric comparison tables with percentage differences, not just raw values.
-- A summary paragraph: what does this comparison reveal about the model's behaviour and the underlying social mechanism?
+Must include: parameter table, empirical basis for preset values, metric comparison table with percentage differences, and a summary paragraph.
 
 ### 9.4 Summary Documentation
 
-Every experimental run or analysis that produces output files must be accompanied by a markdown summary document saved to `analysis/reports/`. The document must include:
+Every analytical run producing output files must have a markdown summary in `analysis/reports/YYYY-MM-DD_<description>.md` containing: date/config, key findings (3–7 bullets), figure references, conclusions, and next steps.
 
-- **Date and run configuration** (random seed, parameter values, steps, num agents)
-- **Key findings** in bullet-point form (3–7 bullets)
-- **Figures** referenced by filename with captions
-- **Conclusions** — what this run tells us about the research question
-- **Next steps** — what question this analysis raises or what experiment to run next
+### 9.5 LLM-Assisted Interpretation
 
-File naming convention: `analysis/reports/YYYY-MM-DD_<short-description>.md`
-
-### 9.5 LLM-Assisted Interpretation Documentation
-
-When Role 3 (Result Interpreter) or Role 4 (Visualization Annotator) is used to generate narrative explanations, include a transparency note alongside each output:
-
-- The LLM model used and whether thinking mode was enabled
-- The data context window provided to the LLM (which metrics, which time range)
-- A brief human verification note confirming the narrative is consistent with the rule-based simulation logs
-
-This demonstrates responsible use of LLM in the ABM cycle, consistent with Vanhée et al. (2507.05723).
+When Role 3 or Role 4 generates output, include a transparency note: model used, thinking mode, data context provided, and a human verification note.
 
 ---
 
 ## 10. Git Conventions
 
-- **Commit often** — at minimum after completing each named task in the phase plan.
-- **Commit message format**:
-  - `feat:` new feature or capability
-  - `fix:` bug fix
-  - `chore:` setup, config, tooling
-  - `docs:` documentation only
-  - `test:` adding or fixing tests
-  - `refactor:` code restructure without behaviour change
+- **On-Demand Commits**: Commit only when explicitly requested by the user.
+- **Commit message format**: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 - **Never commit**: `.env` files, API keys, large data files (>1MB), `data/results/` outputs.
-- **Always verify** `git config user.name` and `git config user.email` are set correctly before committing (repo-local config, not global).
+- **Always verify** `git config user.name` and `git config user.email` before committing (repo-local config, not global).
 
 ---
 
-## 11. What NOT to Do
+## 11. Execution Records
+
+At the completion of each phase, append a record to **`docs/execution_log.md`**.
+
+Each phase record must include:
+- Phase name and completion date
+- Files created (with one-line descriptions)
+- Test results (pass/fail counts)
+- Key findings or technical decisions made during execution
+- Any deviations from the plan and their rationale
+- Status of remaining work (if paused mid-phase)
+
+The execution log is the single source of truth for what has been built and what was discovered. `CLAUDE.md` (this file) remains a concise charter only.
+
+---
+
+## 12. What NOT to Do
 
 - **Do not** auto-advance to the next phase without the user's explicit instruction.
 - **Do not** use external cloud LLM APIs unless explicitly instructed. Ollama is the primary runtime.
