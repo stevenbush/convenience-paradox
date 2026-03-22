@@ -226,11 +226,34 @@ This is a strict requirement. Violations must never appear in code, comments, do
 
 ## 8. Coding Standards
 
+### 8.0 POC Commenting Philosophy
+
+This project is a **Proof of Concept and learning/demonstration exercise**. Code must therefore be written to be read and understood by others — including researchers who may be unfamiliar with the specific libraries or techniques used. Apply the following commenting standards throughout:
+
+**Module-level docstrings**: Every `.py` file begins with a module docstring explaining the file's role within the overall architecture and how it relates to the simulation design.
+
+**Class-level docstrings**: Every class (especially `Resident`, `ConvenienceParadoxModel`) includes a docstring explaining its conceptual role in the model, not just its technical function. For agents, explain what the class represents in the social simulation.
+
+**Method/function docstrings**: All public functions use Google-style docstrings with a one-line summary, an `Args` block, a `Returns` block, and a `Note` or `Design` section where the choice of algorithm or formula is non-obvious.
+
+**Inline comments for model logic**: Agent decision rules, formula choices, and parameter interactions must be commented with the *social science rationale*, not just the mathematics. For example:
+```python
+# Agents with higher stress are more likely to delegate to save time,
+# even if it costs more — modelling the "convenience trap" feedback loop.
+delegation_boost = self.stress_level * self.conformity_sensitivity
+```
+
+**Section headers in long functions**: Use comment banners (`# --- Phase: Task Generation ---`) to segment the logical phases of complex step functions.
+
+**JavaScript**: Every Plotly chart definition includes a comment explaining what the chart is intended to show in the context of the research hypotheses.
+
+**HTML templates**: Comment each major UI section with its purpose and which Flask endpoint or JS function drives it.
+
 ### 8.1 General
 
 - **Python 3.12**. Type hints on all public function signatures.
 - **Docstrings** on all public classes and methods (Google style: one-line summary, Args, Returns).
-- No comments that narrate what the code does. Comments explain *why*, not *what*.
+- Inline comments explain *why* (social science rationale, formula derivation, design trade-offs), not *what* the code mechanically does.
 - No debug `print()` statements in committed code. Use `logging` if runtime output is needed.
 
 ### 8.2 Mesa-Specific
@@ -260,7 +283,62 @@ This is a strict requirement. Violations must never appear in code, comments, do
 
 ---
 
-## 9. Git Conventions
+## 9. Analysis and Documentation Standards
+
+This section governs all hypothesis testing, experimental analysis, and results documentation. Because this is a POC and demonstration project, every analytical output must stand alone as a readable, self-explanatory artefact.
+
+### 9.1 Hypothesis Testing
+
+Each hypothesis (H1–H4) must be addressed with a dedicated analysis block containing:
+
+1. **Hypothesis restatement**: Quote the hypothesis verbatim from the master plan.
+2. **Experimental design**: Describe which parameters were varied, what was held constant, the number of runs, and the number of simulation steps per run.
+3. **Results**: Present the key metrics (tables or plots) with axis labels and units.
+4. **Interpretation**: Written prose explaining what the data shows and whether it supports or refutes the hypothesis. Do not let charts speak for themselves.
+5. **Limitations**: Note any caveats — e.g., sensitivity to initial conditions, parameter ranges not tested, model simplifications that may affect the conclusion.
+
+### 9.2 Sensitivity Analysis
+
+Parameter sweep outputs (heatmaps, phase diagrams) must include:
+
+- A caption explaining the axes and colour scale in plain language.
+- A written paragraph identifying the most influential parameters and the direction of their effect.
+- Explicit identification of any threshold or bifurcation point observed (e.g., the involution threshold for H2).
+
+### 9.3 Scenario Comparison (Type A vs. Type B)
+
+Side-by-side comparisons must include:
+
+- A parameter table showing the exact values used for each preset.
+- An explanation of how those values were informed by empirical stylised facts (ILO, OECD, WVS).
+- Metric comparison tables with percentage differences, not just raw values.
+- A summary paragraph: what does this comparison reveal about the model's behaviour and the underlying social mechanism?
+
+### 9.4 Summary Documentation
+
+Every experimental run or analysis that produces output files must be accompanied by a markdown summary document saved to `analysis/reports/`. The document must include:
+
+- **Date and run configuration** (random seed, parameter values, steps, num agents)
+- **Key findings** in bullet-point form (3–7 bullets)
+- **Figures** referenced by filename with captions
+- **Conclusions** — what this run tells us about the research question
+- **Next steps** — what question this analysis raises or what experiment to run next
+
+File naming convention: `analysis/reports/YYYY-MM-DD_<short-description>.md`
+
+### 9.5 LLM-Assisted Interpretation Documentation
+
+When Role 3 (Result Interpreter) or Role 4 (Visualization Annotator) is used to generate narrative explanations, include a transparency note alongside each output:
+
+- The LLM model used and whether thinking mode was enabled
+- The data context window provided to the LLM (which metrics, which time range)
+- A brief human verification note confirming the narrative is consistent with the rule-based simulation logs
+
+This demonstrates responsible use of LLM in the ABM cycle, consistent with Vanhée et al. (2507.05723).
+
+---
+
+## 10. Git Conventions
 
 - **Commit often** — at minimum after completing each named task in the phase plan.
 - **Commit message format**:
@@ -275,7 +353,7 @@ This is a strict requirement. Violations must never appear in code, comments, do
 
 ---
 
-## 10. What NOT to Do
+## 11. What NOT to Do
 
 - **Do not** auto-advance to the next phase without the user's explicit instruction.
 - **Do not** use external cloud LLM APIs unless explicitly instructed. Ollama is the primary runtime.
@@ -283,7 +361,6 @@ This is a strict requirement. Violations must never appear in code, comments, do
 - **Do not** modify files in `docs/plans/` during execution.
 - **Do not** reference any specific country, culture, or ethnicity anywhere in the project.
 - **Do not** let LLM output directly control agent behaviour in standard simulation mode.
-- **Do not** use Dash, Streamlit, or any other dashboard framework. Flask + vanilla JS only.
 - **Do not** commit `data/results/` output files. They are gitignored.
 - **Do not** exceed 3 turns in any agent forum exchange.
 - **Do not** add `print()` debug statements to committed code.
