@@ -92,18 +92,41 @@ def load_batch_results(csv_path: Path) -> pd.DataFrame:
     equilibrium_df = df[df[step_col] >= (max_step - tail_steps)]
 
     # Aggregate over replications: mean ± std of each outcome metric.
-    # Group by all parameter columns (excluding Step, RunId, AgentID).
-    non_param_cols = {step_col, "RunId", "AgentId", "Step"}
+    # Group by parameter columns only.  We must exclude:
+    #   • bookkeeping indices  (Step, RunId, iteration, AgentId / AgentID)
+    #   • agent-level output metrics that are NOT simulation parameters
+    # Failing to exclude agent-level columns causes pandas' internal group-index
+    # computation to overflow a C long (OverflowError) on large datasets.
+    known_agent_metrics = {
+        "available_time", "stress_level", "delegation_preference", "income",
+        "tasks_completed_self", "tasks_delegated", "time_spent_providing",
+    }
+    non_param_cols = {
+        step_col, "Step", "RunId", "iteration",
+        "AgentId", "AgentID",  # both case variants that Mesa / batch_run may produce
+    } | known_agent_metrics
+
     param_cols = [c for c in df.columns if c not in non_param_cols
                   and c not in _get_outcome_cols(df)]
+
+    # Drop any param column that is entirely NaN in the equilibrium window.
+    # Mesa batch_run sometimes leaves replication-seed columns unpopulated for
+    # agent-level rows; groupby(dropna=True) would then discard every row.
+    param_cols = [c for c in param_cols if equilibrium_df[c].notna().any()]
 
     outcome_cols = _get_outcome_cols(df)
     if not param_cols or not outcome_cols:
         logger.warning("Could not identify parameter or outcome columns.")
         return equilibrium_df
 
-    agg_dict = {col: ["mean", "std"] for col in outcome_cols if col in equilibrium_df.columns}
-    aggregated = equilibrium_df.groupby(param_cols).agg(agg_dict)
+    # Convert param columns to categorical so pandas uses compact integer codes
+    # internally, preventing C-long overflow when many columns are grouped.
+    eq = equilibrium_df.copy()
+    for col in param_cols:
+        eq[col] = eq[col].astype("category")
+
+    agg_dict = {col: ["mean", "std"] for col in outcome_cols if col in eq.columns}
+    aggregated = eq.groupby(param_cols).agg(agg_dict)
     aggregated.columns = ["_".join(c) for c in aggregated.columns]
     aggregated = aggregated.reset_index()
 
