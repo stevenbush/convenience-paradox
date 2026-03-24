@@ -2,7 +2,7 @@
 
 Architecture role:
     This module creates and configures the Flask application. It uses the
-    application factory pattern (create_app()) as required by CLAUDE.md §8.3.
+    application factory pattern (create_app()).
     The factory pattern allows the app to be instantiated with different
     configurations (e.g., for testing) without running in global scope.
 

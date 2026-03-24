@@ -300,8 +300,6 @@ class ConvenienceParadoxModel(mesa.Model):
           Phase 2: Model matches delegated tasks to service providers.
           Phase 3: Agents update stress and adapt delegation preferences.
 
-        Following CLAUDE.md §8.2, this method is kept thin. Substantive
-        logic lives in agent methods; the model's role is coordination.
         """
         # --- Reset step-level state ---
         # The service_pool accumulates during Phase 1 and is consumed in Phase 2.

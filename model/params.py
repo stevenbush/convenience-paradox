@@ -14,7 +14,7 @@ in the Convenience Paradox simulation. It serves three purposes:
      building interactive slider controls.
 
   3. **Neutrality compliance**: All preset labels are abstract. The code
-     contains no country, region, or cultural references. See CLAUDE.md §7.
+     contains no country, region, or cultural references.
 
 Empirical grounding:
   - ILO ILOSTAT 2022-2024: working hours inform available_time and
