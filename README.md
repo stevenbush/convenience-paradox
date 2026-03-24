@@ -8,18 +8,20 @@
 
 ## Overview
 
-**The Convenience Paradox** is a computational social science project that uses Agent-Based Modeling (ABM) to investigate whether widespread service delegation (outsourcing daily tasks to third-party providers) produces a systemic paradox: greater convenience for individuals, but greater total labour and growing inequality at the system level — an **involution spiral**.
+**The Convenience Paradox** is a computational social science project that uses **Agent-Based Modeling (ABM)** to investigate whether widespread service delegation (outsourcing daily tasks to third-party providers) produces a systemic paradox: greater convenience for individuals, but greater total labour and growing inequality at the system level — an **involution spiral**.
 
 The project is built as a full-stack interactive research tool:
 
-| Layer | Technology |
-|---|---|
-| ABM Engine | Mesa 3.5.x |
-| Local LLM | Ollama + Qwen 3.5 4B |
-| Web Backend | Flask REST API |
-| Visualisation | Plotly.js (interactive) + Matplotlib (publication) |
-| Data Persistence | SQLite |
-| Environment | Python 3.12, Miniconda3 |
+
+| Layer            | Technology                                         |
+| ---------------- | -------------------------------------------------- |
+| ABM Engine       | Mesa 3.5.x                                         |
+| Local LLM        | Ollama + Qwen 3.5 4B                               |
+| Web Backend      | Flask REST API                                     |
+| Visualisation    | Plotly.js (interactive) + Matplotlib (publication) |
+| Data Persistence | SQLite                                             |
+| Environment      | Python 3.12, Miniconda3                            |
+
 
 > **Neutrality notice**: This model explores abstract social dynamics in terms of configurable parameters. It does not characterise, evaluate, or make claims about any specific country, culture, or people. "Type A" and "Type B" are purely abstract parameter configurations.
 
@@ -31,12 +33,14 @@ The project is built as a full-stack interactive research tool:
 
 ### Hypotheses
 
-| | Hypothesis | Status |
-|---|---|---|
-| **H1** | Higher delegation leads to higher total systemic labour hours | ✅ Confirmed (60-step runs: +22% labour hours in Type B) |
-| **H2** | A critical delegation threshold triggers irreversible involution spiral | 🔶 Supported (efficiency plateau visible; cascade requires 200+ steps) |
-| **H3** | Higher autonomy achieves lower stress and higher aggregate well-being | 🔶 Long-run phenomenon — requires 100+ steps for stress divergence to emerge |
-| **H4** | Mixed-delegation societies are unstable, drifting toward one extreme | 🔶 Partially supported — network conformity drives polarisation |
+
+|        | Hypothesis                                                              | Status                                                                       |
+| ------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **H1** | Higher delegation leads to higher total systemic labour hours           | ✅ Confirmed (60-step runs: +22% labour hours in Type B)                      |
+| **H2** | A critical delegation threshold triggers irreversible involution spiral | 🔶 Supported (efficiency plateau visible; cascade requires 200+ steps)       |
+| **H3** | Higher autonomy achieves lower stress and higher aggregate well-being   | 🔶 Long-run phenomenon — requires 100+ steps for stress divergence to emerge |
+| **H4** | Mixed-delegation societies are unstable, drifting toward one extreme    | 🔶 Partially supported — network conformity drives polarisation              |
+
 
 ### Key Empirical Finding
 
@@ -86,13 +90,15 @@ Income Gini              0.147 ± 0.026        0.243 ± 0.024    (+65%)
 
 The LLM operates **at the periphery** of the simulation. The ABM core is a transparent, rule-based white box. This implements the interpretability position articulated by Vanhee et al. (2507.05723).
 
-| Role | Position | Description |
-|---|---|---|
-| **Role 1** — Scenario Parser | Input layer | Natural language → model parameters |
-| **Role 2** — Profile Generator | Input layer | Demographic text → agent attributes |
-| **Role 3** — Result Interpreter | Output layer | Data + question → narrative explanation |
-| **Role 4** — Viz Annotator | Output layer | Chart metrics → auto-generated captions |
-| **Role 5** — Agent Forums | **Experimental** in-loop | Agents discuss delegation norms; small bounded norm updates |
+
+| Role                            | Position                 | Description                                                 |
+| ------------------------------- | ------------------------ | ----------------------------------------------------------- |
+| **Role 1** — Scenario Parser    | Input layer              | Natural language → model parameters                         |
+| **Role 2** — Profile Generator  | Input layer              | Demographic text → agent attributes                         |
+| **Role 3** — Result Interpreter | Output layer             | Data + question → narrative explanation                     |
+| **Role 4** — Viz Annotator      | Output layer             | Chart metrics → auto-generated captions                     |
+| **Role 5** — Agent Forums       | **Experimental** in-loop | Agents discuss delegation norms; small bounded norm updates |
+
 
 ---
 
@@ -101,6 +107,7 @@ The LLM operates **at the periphery** of the simulation. The ABM core is a trans
 ### Agent: `Resident`
 
 Each resident agent holds:
+
 - `available_time` — daily discretionary hours budget (reset each step)
 - `delegation_preference` — probability of delegating a task [0, 1]
 - `stress_level` — accumulated when time runs out [0, 1]
@@ -257,12 +264,14 @@ convenience-paradox/
 
 This is an **Empirically Informed Theoretical Model** — not a calibrated predictive model. Real-world data is used to inform plausible parameter ranges, not to calibrate the model to fit specific outcomes.
 
-| Dataset | Role |
-|---|---|
-| ILO Working Hours | Informs `available_time` ranges |
-| World Values Survey | Informs `delegation_preference` and `social_conformity_pressure` |
-| OECD Better Life Index | Qualitative validation reference for stress outcomes |
-| World Bank Service Employment | Contextualises delegation dynamics |
+
+| Dataset                       | Role                                                             |
+| ----------------------------- | ---------------------------------------------------------------- |
+| ILO Working Hours             | Informs `available_time` ranges                                  |
+| World Values Survey           | Informs `delegation_preference` and `social_conformity_pressure` |
+| OECD Better Life Index        | Qualitative validation reference for stress outcomes             |
+| World Bank Service Employment | Contextualises delegation dynamics                               |
+
 
 All stylized facts are committed to `data/empirical/`. Sources are referenced by dataset name only; regional breakdowns are aggregated into abstract categories.
 
@@ -275,6 +284,7 @@ All stylized facts are committed to `data/empirical/`. Sources are referenced by
 A central question in computational social science is: **should the agents in our model be rule-based (transparent, interpretable) or LLM-driven (richer, but opaque)?**
 
 This project deliberately explores both positions:
+
 - The **core ABM** is rule-based — every decision is an explicit equation. This preserves interpretability: we can trace why any agent made any choice.
 - **LLM roles 1–4** enhance the interface without touching the simulation logic. The LLM helps users interact with the model, but does not drive agent behaviour.
 - **Agent forums** (experimental) insert a small, bounded LLM influence *into* the simulation. The dashboard shows both modes side-by-side, making the difference visible and auditable.
@@ -306,6 +316,7 @@ https://github.com/stevenbush/convenience-paradox
 MIT License. See LICENSE for details.
 
 The empirical data in `data/empirical/` is derived from:
+
 - ILO Statistics (CC BY 4.0)
 - OECD Better Life Index (CC BY 4.0)
 - World Values Survey (free for academic use)
