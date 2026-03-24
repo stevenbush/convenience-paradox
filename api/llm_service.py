@@ -36,13 +36,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import textwrap
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import ollama
 from pydantic import ValidationError
 
+from api.llm_audit import make_json_safe
 from api.schemas import (
     AgentProfileOutput,
     ParsedScenarioParams,
@@ -50,20 +52,25 @@ from api.schemas import (
     VisualizationAnnotation,
 )
 
+if TYPE_CHECKING:
+    from api.llm_audit import LlmAuditRecorder
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Primary model: best structured JSON output in the 1B–4B range (see master plan §2)
-PRIMARY_MODEL = "qwen3.5:4b"
+# Primary model: best structured JSON output in the 1B–4B range (see master plan §2).
+# Override at launch: LLM_PRIMARY_MODEL=your-model:tag python run.py
+PRIMARY_MODEL = os.environ.get("LLM_PRIMARY_MODEL", "qwen3.5:4b")
 
-# Secondary / lightweight model: faster, used when profile generation is batched
-SECONDARY_MODEL = "qwen3:1.7b"
+# Secondary / lightweight model: faster, used when profile generation is batched.
+# Override at launch: LLM_SECONDARY_MODEL=your-model:tag python run.py
+SECONDARY_MODEL = os.environ.get("LLM_SECONDARY_MODEL", "qwen3:1.7b")
 
-# Ollama host (default; overridable via config)
-OLLAMA_HOST = "http://localhost:11434"
+# Ollama host. Override: OLLAMA_HOST=http://other-host:11434 python run.py
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 # Maximum tokens to generate. 600 covers all roles; thinking traces use tokens
 # before the answer, so a higher limit prevents truncated JSON.
@@ -81,6 +88,9 @@ def _chat(
     schema: type,
     model: str = PRIMARY_MODEL,
     think: bool = False,
+    recorder: Optional["LlmAuditRecorder"] = None,
+    role: str = "role_unknown",
+    call_kind: str = "structured_chat",
 ) -> dict[str, Any]:
     """Core Ollama chat call with Pydantic-enforced structured output.
 
@@ -110,14 +120,22 @@ def _chat(
     """
     logger.debug("LLM call | model=%s | think=%s | prompt_chars=%d", model, think, len(prompt))
     t0 = time.perf_counter()
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+    ]
+    content = ""
+    parsed: dict[str, Any] | None = None
+    schema_validation = {
+        "schema": schema.__name__,
+        "valid": None,
+        "error": None,
+    }
 
     try:
         response = ollama.chat(
             model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
+            messages=messages,
             format=schema.model_json_schema(),
             options={
                 "num_predict": MAX_TOKENS,
@@ -127,6 +145,20 @@ def _chat(
             think=think,
         )
     except Exception as e:
+        if recorder:
+            recorder.record_call(
+                role=role,
+                call_kind=call_kind,
+                model=model,
+                think=think,
+                system_prompt=system,
+                user_prompt=prompt,
+                raw_response=content or None,
+                parsed_output=parsed,
+                schema_validation=schema_validation,
+                elapsed_seconds=time.perf_counter() - t0,
+                error=e,
+            )
         logger.error("Ollama call failed: %s", e)
         raise RuntimeError(f"Ollama is unreachable or errored: {e}") from e
 
@@ -134,6 +166,20 @@ def _chat(
     content = response.message.content
 
     if not content or not content.strip():
+        if recorder:
+            recorder.record_call(
+                role=role,
+                call_kind=call_kind,
+                model=model,
+                think=think,
+                system_prompt=system,
+                user_prompt=prompt,
+                raw_response=content,
+                parsed_output=None,
+                schema_validation=schema_validation,
+                elapsed_seconds=elapsed,
+                error=RuntimeError("Ollama returned empty content."),
+            )
         raise RuntimeError(
             f"Ollama returned empty content. Model: {model}. "
             "Try increasing num_predict or checking model availability."
@@ -147,8 +193,43 @@ def _chat(
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as e:
+        if recorder:
+            recorder.record_call(
+                role=role,
+                call_kind=call_kind,
+                model=model,
+                think=think,
+                system_prompt=system,
+                user_prompt=prompt,
+                raw_response=content,
+                parsed_output=None,
+                schema_validation=schema_validation,
+                elapsed_seconds=elapsed,
+                error=e,
+            )
         logger.error("LLM output is not valid JSON: %s | content=%s", e, content[:400])
         raise RuntimeError(f"LLM returned invalid JSON: {e}") from e
+
+    try:
+        schema(**parsed)
+        schema_validation["valid"] = True
+    except ValidationError as e:
+        schema_validation["valid"] = False
+        schema_validation["error"] = str(e)
+
+    if recorder:
+        recorder.record_call(
+            role=role,
+            call_kind=call_kind,
+            model=model,
+            think=think,
+            system_prompt=system,
+            user_prompt=prompt,
+            raw_response=content,
+            parsed_output=make_json_safe(parsed),
+            schema_validation=schema_validation,
+            elapsed_seconds=elapsed,
+        )
 
     return parsed
 
@@ -195,7 +276,10 @@ ROLE1_SYSTEM = textwrap.dedent("""\
 """)
 
 
-def parse_scenario(description: str) -> dict[str, Any]:
+def parse_scenario(
+    description: str,
+    recorder: Optional["LlmAuditRecorder"] = None,
+) -> dict[str, Any]:
     """Role 1: Convert a natural-language scenario description into model parameters.
 
     The LLM extracts semantically clear parameters from the description.
@@ -217,7 +301,14 @@ def parse_scenario(description: str) -> dict[str, Any]:
     """
     prompt = f"User scenario description:\n\n{description}"
 
-    raw = _chat(prompt, ROLE1_SYSTEM, ParsedScenarioParams)
+    raw = _chat(
+        prompt,
+        ROLE1_SYSTEM,
+        ParsedScenarioParams,
+        recorder=recorder,
+        role="role_1",
+        call_kind="scenario_parser",
+    )
     parsed = ParsedScenarioParams(**raw)
 
     logger.info(
@@ -257,7 +348,10 @@ ROLE2_SYSTEM = textwrap.dedent("""\
 """)
 
 
-def generate_agent_profile(demographic_description: str) -> dict[str, Any]:
+def generate_agent_profile(
+    demographic_description: str,
+    recorder: Optional["LlmAuditRecorder"] = None,
+) -> dict[str, Any]:
     """Role 2: Generate numerical agent attributes from a demographic description.
 
     All outputs are logged alongside the input prompt for auditability.
@@ -282,7 +376,15 @@ def generate_agent_profile(demographic_description: str) -> dict[str, Any]:
 
     # Use the lighter secondary model for batch profile generation.
     # Quality is sufficient for numerical attribute extraction.
-    raw = _chat(prompt, ROLE2_SYSTEM, AgentProfileOutput, model=SECONDARY_MODEL)
+    raw = _chat(
+        prompt,
+        ROLE2_SYSTEM,
+        AgentProfileOutput,
+        model=SECONDARY_MODEL,
+        recorder=recorder,
+        role="role_2",
+        call_kind="profile_generator",
+    )
     profile = AgentProfileOutput(**raw)
 
     logger.info(
@@ -326,10 +428,45 @@ ROLE3_SYSTEM = textwrap.dedent("""\
 """)
 
 
+def _coerce_result_interpretation(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalise common near-miss Role 3 outputs into the expected schema.
+
+    Qwen occasionally returns semantically correct keys such as `analysis`
+    instead of the required `answer`. The probe harness should treat these
+    as recoverable formatting drift, not as a hard failure, as long as the
+    meaning can be mapped transparently into the explicit schema.
+    """
+    normalized = dict(raw)
+
+    alias_map = {
+        "analysis": "answer",
+        "summary": "answer",
+        "response": "answer",
+        "explanation": "detailed_explanation",
+        "details": "detailed_explanation",
+        "hypothesis": "hypothesis_connection",
+        "hypothesis_tag": "hypothesis_connection",
+        "caveat": "confidence_note",
+        "caveats": "confidence_note",
+        "limitation": "confidence_note",
+        "limitations": "confidence_note",
+    }
+
+    for source_key, target_key in alias_map.items():
+        if target_key not in normalized and source_key in normalized:
+            value = normalized[source_key]
+            if isinstance(value, list):
+                value = "; ".join(str(item) for item in value)
+            normalized[target_key] = value
+
+    return normalized
+
+
 def interpret_results(
     question: str,
     context: dict[str, Any],
     history: Optional[list[dict]] = None,
+    recorder: Optional["LlmAuditRecorder"] = None,
 ) -> dict[str, Any]:
     """Role 3: Generate a narrative interpretation of simulation results.
 
@@ -349,8 +486,7 @@ def interpret_results(
     Note:
         The `confidence_note` field is used to surface model limitations
         (e.g., "H3 stress divergence typically requires 100+ steps; current
-        run has only 20 steps."). This is part of the honest interpretation
-        principle in CLAUDE.md §8.0.
+        run has only 20 steps.").
     """
     # Build a concise context block for the prompt.
     # Verbose context wastes tokens; we give the LLM only what it needs.
@@ -373,8 +509,15 @@ def interpret_results(
         f"\nUser question: {question}"
     )
 
-    raw = _chat(prompt, ROLE3_SYSTEM, ResultInterpretation)
-    result = ResultInterpretation(**raw)
+    raw = _chat(
+        prompt,
+        ROLE3_SYSTEM,
+        ResultInterpretation,
+        recorder=recorder,
+        role="role_3",
+        call_kind="result_interpreter",
+    )
+    result = ResultInterpretation(**_coerce_result_interpretation(raw))
 
     logger.info("Role 3 Result Interpreter | question=%s... | answer_chars=%d",
                 question[:40], len(result.answer))
@@ -405,6 +548,7 @@ def annotate_visualization(
     chart_name: str,
     chart_metrics: dict[str, Any],
     preset: Optional[str] = None,
+    recorder: Optional["LlmAuditRecorder"] = None,
 ) -> dict[str, Any]:
     """Role 4: Generate a caption and insight for a dashboard chart.
 
@@ -433,7 +577,14 @@ def annotate_visualization(
         f"Chart statistics:\n{json.dumps(chart_metrics, indent=2, default=str)}"
     )
 
-    raw = _chat(prompt, ROLE4_SYSTEM, VisualizationAnnotation)
+    raw = _chat(
+        prompt,
+        ROLE4_SYSTEM,
+        VisualizationAnnotation,
+        recorder=recorder,
+        role="role_4",
+        call_kind="visualization_annotator",
+    )
     annotation = VisualizationAnnotation(**raw)
 
     logger.info("Role 4 Viz Annotator | chart=%s | insight=%s",

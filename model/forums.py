@@ -41,7 +41,6 @@ Limitations at Qwen 3.5 4B:
 See also:
     - api/llm_service.py  — the peripheral LLM roles (non-experimental)
     - model/agents.py     — Resident agent class (delegation_preference field)
-    - CLAUDE.md §4.3      — LLM integration principles
 """
 
 from __future__ import annotations
@@ -59,6 +58,7 @@ import ollama
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
+    from api.llm_audit import LlmAuditRecorder
     from model.agents import Resident
 
 logger = logging.getLogger(__name__)
@@ -137,6 +137,7 @@ class GroupSession:
     turns: list[DialogueTurn] # The full dialogue transcript
     outcome: Optional[ForumOutcome] = None  # Extracted norm signal
     delta_applied: float = 0.0             # Actual delta applied to delegation_preference
+    preference_updates: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -235,6 +236,7 @@ def _run_group_dialogue(
     agents: list["Resident"],
     step: int,
     num_turns: int,
+    recorder: Optional["LlmAuditRecorder"] = None,
 ) -> GroupSession:
     """Run one group's forum dialogue via Ollama.
 
@@ -276,19 +278,52 @@ def _run_group_dialogue(
         if i > 0:
             speaker_prompt = f"You are: {persona}\n\nRespond to what was just said."
 
+        call_messages = messages + [{"role": "user", "content": speaker_prompt}]
+        t0 = time.perf_counter()
         try:
             resp = ollama.chat(
                 model=FORUM_MODEL,
-                messages=messages + [{"role": "user", "content": speaker_prompt}],
+                messages=call_messages,
                 options={"num_predict": 120, "temperature": 0.7, "top_p": 0.9},
                 think=False,
             )
             content = resp.message.content.strip()
             if not content:
                 content = "[No response generated]"
+            if recorder:
+                recorder.record_call(
+                    role="role_5",
+                    call_kind="forum_dialogue_turn",
+                    model=FORUM_MODEL,
+                    think=False,
+                    messages=call_messages,
+                    raw_response=content,
+                    elapsed_seconds=time.perf_counter() - t0,
+                    extra={
+                        "step": step,
+                        "speaker_id": agent.unique_id,
+                        "group_agent_ids": [a.unique_id for a in agents],
+                    },
+                )
         except Exception as e:
             logger.warning("Forum dialogue LLM call failed: %s", e)
             content = "[Connection error during dialogue]"
+            if recorder:
+                recorder.record_call(
+                    role="role_5",
+                    call_kind="forum_dialogue_turn",
+                    model=FORUM_MODEL,
+                    think=False,
+                    messages=call_messages,
+                    raw_response=None,
+                    elapsed_seconds=time.perf_counter() - t0,
+                    error=e,
+                    extra={
+                        "step": step,
+                        "speaker_id": agent.unique_id,
+                        "group_agent_ids": [a.unique_id for a in agents],
+                    },
+                )
 
         turn = DialogueTurn(
             speaker_id=agent.unique_id,
@@ -303,13 +338,23 @@ def _run_group_dialogue(
 
     # Extract norm signal from the completed dialogue.
     transcript_str = "\n".join(transcript_lines)
-    outcome = _extract_forum_outcome(transcript_str)
+    outcome = _extract_forum_outcome(
+        transcript_str,
+        recorder=recorder,
+        step=step,
+        agent_ids=[a.unique_id for a in agents],
+    )
     session.outcome = outcome
 
     return session
 
 
-def _extract_forum_outcome(transcript: str) -> Optional[ForumOutcome]:
+def _extract_forum_outcome(
+    transcript: str,
+    recorder: Optional["LlmAuditRecorder"] = None,
+    step: int | None = None,
+    agent_ids: Optional[list[int]] = None,
+) -> Optional[ForumOutcome]:
     """Run the outcome extraction LLM call and parse the ForumOutcome.
 
     This is a separate, structured call from the dialogue itself.
@@ -322,22 +367,77 @@ def _extract_forum_outcome(transcript: str) -> Optional[ForumOutcome]:
         ForumOutcome if successful; None if LLM call fails.
     """
     prompt = OUTCOME_EXTRACTION_PROMPT.format(transcript=transcript[:1200])
+    t0 = time.perf_counter()
+    messages = [{"role": "user", "content": prompt}]
+    content = ""
 
     try:
         resp = ollama.chat(
             model=FORUM_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             format=ForumOutcome.model_json_schema(),
             options={"num_predict": 200, "temperature": 0.2},
             think=False,
         )
         content = resp.message.content
         if not content:
+            if recorder:
+                recorder.record_call(
+                    role="role_5",
+                    call_kind="forum_outcome_extraction",
+                    model=FORUM_MODEL,
+                    think=False,
+                    messages=messages,
+                    raw_response=content,
+                    schema_validation={
+                        "schema": "ForumOutcome",
+                        "valid": False,
+                        "error": "Empty response",
+                    },
+                    elapsed_seconds=time.perf_counter() - t0,
+                    error=RuntimeError("Empty forum outcome response."),
+                    extra={"step": step, "group_agent_ids": agent_ids},
+                )
             return None
         data = json.loads(content)
-        return ForumOutcome(**data)
+        outcome = ForumOutcome(**data)
+        if recorder:
+            recorder.record_call(
+                role="role_5",
+                call_kind="forum_outcome_extraction",
+                model=FORUM_MODEL,
+                think=False,
+                messages=messages,
+                raw_response=content,
+                parsed_output=outcome.model_dump(),
+                schema_validation={
+                    "schema": "ForumOutcome",
+                    "valid": True,
+                    "error": None,
+                },
+                elapsed_seconds=time.perf_counter() - t0,
+                extra={"step": step, "group_agent_ids": agent_ids},
+            )
+        return outcome
     except Exception as e:
         logger.warning("Forum outcome extraction failed: %s", e)
+        if recorder:
+            recorder.record_call(
+                role="role_5",
+                call_kind="forum_outcome_extraction",
+                model=FORUM_MODEL,
+                think=False,
+                messages=messages,
+                raw_response=content or None,
+                schema_validation={
+                    "schema": "ForumOutcome",
+                    "valid": False,
+                    "error": str(e),
+                },
+                elapsed_seconds=time.perf_counter() - t0,
+                error=e,
+                extra={"step": step, "group_agent_ids": agent_ids},
+            )
         return None
 
 
@@ -346,6 +446,8 @@ def run_forum_step(
     forum_fraction: float = DEFAULT_FORUM_FRACTION,
     group_size: int = DEFAULT_GROUP_SIZE,
     num_turns: int = DEFAULT_NUM_TURNS,
+    recorder: Optional["LlmAuditRecorder"] = None,
+    rng_seed: int | None = None,
 ) -> ForumSession:
     """Run one forum event for a subset of the model's agents.
 
@@ -374,7 +476,8 @@ def run_forum_step(
     n_invite = min(n_invite, len(all_agents))
 
     # Random sample of agents for this forum event.
-    participants = random.sample(all_agents, n_invite)
+    rng = random.Random(rng_seed) if rng_seed is not None else random
+    participants = rng.sample(all_agents, n_invite)
 
     # Divide into groups of group_size.
     groups_agents: list[list] = [
@@ -390,7 +493,12 @@ def run_forum_step(
     )
 
     for group in groups_agents:
-        group_session = _run_group_dialogue(group, model.current_step, num_turns)
+        group_session = _run_group_dialogue(
+            group,
+            model.current_step,
+            num_turns,
+            recorder=recorder,
+        )
         session.groups.append(group_session)
 
         # Apply bounded norm update to each participating agent.
@@ -402,8 +510,15 @@ def run_forum_step(
 
             for agent in group:
                 # Apply update and clamp to [0.02, 0.98] (same bounds as normal adaptation).
+                before = agent.delegation_preference
                 new_pref = agent.delegation_preference + delta
                 agent.delegation_preference = max(0.02, min(0.98, new_pref))
+                group_session.preference_updates.append({
+                    "agent_id": agent.unique_id,
+                    "before_preference": round(before, 6),
+                    "after_preference": round(agent.delegation_preference, 6),
+                    "delta_applied": round(agent.delegation_preference - before, 6),
+                })
 
             logger.debug(
                 "Forum group [%s] | norm=%.2f | conf=%.2f | delta=%.3f",
@@ -449,6 +564,7 @@ def format_session_for_api(session: ForumSession) -> dict:
             ],
             "outcome": g.outcome.model_dump() if g.outcome else None,
             "delta_applied": round(g.delta_applied, 4),
+            "preference_updates": g.preference_updates,
         })
 
     return {

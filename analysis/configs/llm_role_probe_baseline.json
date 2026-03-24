@@ -1,0 +1,86 @@
+{
+  "shared_mini_simulation": {
+    "steps": 6,
+    "params": {
+      "num_agents": 20,
+      "delegation_preference_mean": 0.58,
+      "delegation_preference_std": 0.08,
+      "service_cost_factor": 0.28,
+      "social_conformity_pressure": 0.42,
+      "tasks_per_step_mean": 2.7,
+      "tasks_per_step_std": 0.6,
+      "stress_threshold": 2.5,
+      "stress_recovery_rate": 0.1,
+      "adaptation_rate": 0.04,
+      "initial_available_time": 8.0,
+      "network_type": "small_world"
+    },
+    "preset_label": "Custom Probe Baseline"
+  },
+  "role_1": {
+    "description": "Imagine an abstract society where app-based errands, meal preparation, and household help are common. Services are affordable enough that many residents use them several times a week, and people notice what their neighbours choose to do.",
+    "base_params": {
+      "num_agents": 20,
+      "delegation_preference_mean": 0.5,
+      "delegation_preference_std": 0.1,
+      "service_cost_factor": 0.4,
+      "social_conformity_pressure": 0.3,
+      "tasks_per_step_mean": 2.5,
+      "tasks_per_step_std": 0.75,
+      "stress_threshold": 2.5,
+      "stress_recovery_rate": 0.1,
+      "adaptation_rate": 0.03,
+      "initial_available_time": 8.0,
+      "network_type": "small_world"
+    },
+    "mini_run_steps": 5
+  },
+  "role_2": {
+    "description": "A time-pressed resident who values convenience, handles paperwork confidently, but is less comfortable with home maintenance and repetitive domestic chores.",
+    "decision_probe": {
+      "available_time": 3.1,
+      "stress_level": 0.35,
+      "service_cost_factor": 0.32,
+      "tasks": [
+        "domestic",
+        "administrative",
+        "errand",
+        "maintenance"
+      ],
+      "random_draws": [
+        0.18,
+        0.42,
+        0.61,
+        0.84
+      ]
+    }
+  },
+  "role_3": {
+    "question": "What does this short run suggest about delegation pressure and well-being, and which hypothesis does it most directly inform?",
+    "history": []
+  },
+  "role_4": {
+    "chart_name": "total_labor_hours",
+    "preset": "custom"
+  },
+  "role_5": {
+    "warmup_steps": 2,
+    "forum_fraction": 0.2,
+    "group_size": 2,
+    "num_turns": 1,
+    "model_params": {
+      "num_agents": 10,
+      "delegation_preference_mean": 0.56,
+      "delegation_preference_std": 0.08,
+      "service_cost_factor": 0.28,
+      "social_conformity_pressure": 0.5,
+      "tasks_per_step_mean": 2.4,
+      "tasks_per_step_std": 0.5,
+      "stress_threshold": 2.5,
+      "stress_recovery_rate": 0.1,
+      "adaptation_rate": 0.04,
+      "initial_available_time": 8.0,
+      "network_type": "small_world"
+    }
+  }
+}
