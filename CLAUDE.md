@@ -62,8 +62,9 @@ eval "$(conda shell.zsh hook)" && conda activate convenience-paradox
 Python 3.12.13
 
 # Key packages (verified)
-Mesa 3.5.1 | Mesa-LLM 0.3.0 | Flask 3.1.3 | Plotly 6.6.0
+Mesa 3.5.1 | Mesa-LLM 0.3.0 | Dash 4.x | Plotly 6.6.0
 Pandas 3.0.1 | Matplotlib 3.10.8 | Pydantic 2.12.5 | Ollama SDK 0.6.1
+Dash-Bootstrap-Components | Dash-AG-Grid
 ```
 
 ### 3.2 Local LLM
@@ -102,9 +103,13 @@ MacBook Pro, M4 Pro chip, 24GB unified memory. No CUDA. Metal-accelerated infere
 ```
 convenience-paradox/
   model/          # Mesa ABM core (agents, model, params)
-  api/            # Flask REST API and LLM service layer
-  static/         # CSS and JavaScript (Plotly.js, chat widget)
-  templates/      # Jinja2 HTML templates
+  api/            # LLM service layer and Pydantic schemas
+  dash_app/       # Plotly Dash multi-page application
+    app.py        # Dash app factory, navbar, theme, page_container
+    pages/        # Individual page modules (Dash Pages)
+    components/   # Reusable Dash components (charts, cards, etc.)
+    callbacks/    # Callback logic separated from layout (extensibility)
+    assets/       # Dash auto-served CSS/images
   analysis/       # Batch runs, sensitivity analysis, matplotlib plots
   data/
     empirical/    # ILO, OECD, WVS stylized facts (CSV/JSON) — committed
@@ -121,10 +126,10 @@ convenience-paradox/
 |-------|-----------|-------|
 | ABM Engine | Mesa 3.5.x + Mesa-LLM 0.3.0 | Core simulation; run headlessly |
 | LLM Runtime | Ollama + Qwen 3.5 4B | Local only; cloud is fallback via LiteLLM |
-| Web Backend | Flask | REST API + Jinja2 templates |
-| Visualization | Plotly.js (interactive) + matplotlib (publication) | |
-| Data Layer | Pandas DataFrames + SQLite | DataCollector → DataFrames → API → JS |
-| Frontend | Vanilla JS + Plotly.js + chat widget | No JS frameworks |
+| Web Framework | Plotly Dash 4.x | Multi-page app with Dash Pages |
+| UI Components | dash-bootstrap-components + dash-ag-grid | Professional theming, interactive data tables |
+| Visualization | Plotly (Dash-native) + matplotlib (publication) | |
+| Data Layer | Pandas DataFrames + SQLite | DataCollector → DataFrames → Dash callbacks |
 
 ---
 
@@ -215,7 +220,7 @@ Presets are informed by ILO, WVS, and OECD stylized facts. They do not calibrate
 
 ### 6.4 LLM Service Layer
 
-File: `api/llm_service.py`. All Ollama calls go through this module. Never call `ollama` directly from `routes.py` or model code.
+File: `api/llm_service.py`. All Ollama calls go through this module. Never call `ollama` directly from Dash callbacks or model code.
 
 Pydantic schemas: `api/schemas.py`. One schema per structured output type.
 
@@ -249,8 +254,8 @@ This project is a **Proof of Concept and learning/demonstration exercise**. Code
 - **Method docstrings**: Google style — one-line summary, Args, Returns, and a Note where the formula or design choice is non-obvious.
 - **Inline comments**: Explain the *social science rationale*, not what the code mechanically does.
 - **Section headers**: Use `# --- Section Name ---` banners to segment long functions.
-- **JavaScript**: Every Plotly chart definition comments which hypothesis it informs.
-- **HTML templates**: Comment each major UI section with its purpose and which endpoint/JS drives it.
+- **Dash layouts**: Comment each major UI section with its purpose and which callback drives it.
+- **Dash callbacks**: Document which data source and hypothesis each chart callback serves.
 
 ### 8.1 General
 
@@ -263,18 +268,22 @@ This project is a **Proof of Concept and learning/demonstration exercise**. Code
 - `DataCollector` is the only sanctioned way to collect simulation data.
 - Keep `model.step()` thin — agent logic lives in agent methods.
 
-### 8.3 Flask-Specific
+### 8.3 Dash-Specific
 
-- All API responses are JSON. Use `flask.jsonify()`.
-- Use the application factory pattern (`create_app()` in `api/app.py`).
-- All simulation state is managed server-side. The frontend is stateless.
-- Endpoints follow REST conventions: `POST /api/simulation/init`, `POST /api/simulation/step`, etc.
+- Use Dash Pages (`dash.register_page()`) for multi-page navigation.
+- Use `dash-bootstrap-components` for layout and theming. Use a professional Bootstrap theme.
+- All simulation state is managed server-side via module-level state or `dcc.Store`.
+- Callbacks must be idempotent — safe to trigger on any input change.
+- Use `dash-ag-grid` for interactive data tables with sorting, filtering, and row management.
+- Dash callbacks call model and service functions directly via Python imports — no HTTP/REST layer.
 
-### 8.4 JavaScript
+### 8.4 Dash Callbacks and Visualization
 
-- Vanilla JS only. No frameworks (no React, Vue, etc.).
-- Plotly.js for all charts. Do not use D3.js directly.
-- Chart update functions must be idempotent — safe to call on every data refresh.
+- All interactivity is handled through Dash callbacks (`@callback`). No custom JavaScript.
+- Plotly figures are created via `plotly.graph_objects` or `plotly.express` and rendered with `dcc.Graph`.
+- Chart update functions must be idempotent — safe to call on every callback trigger.
+- Use `dash.callback_context` to determine which input triggered a callback when multiple inputs exist.
+- Reusable chart-building functions belong in `dash_app/components/`.
 
 ### 8.5 Testing
 
