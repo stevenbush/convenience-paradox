@@ -93,12 +93,13 @@ class TestTask:
         assert task.time_cost_for(0.5) == pytest.approx(2.0)
 
     def test_minimum_proficiency_clamp(self):
-        """Proficiency below 0.1 is clamped to prevent extreme time costs."""
+        """Proficiency below 0.1 is clamped; skill-gap penalty also applies."""
         task = Task(task_type="maintenance", base_time=1.5, skill_requirement=0.65)
-        # Proficiency 0.0 is clamped to 0.1 → time = 1.5 / 0.1 = 15.0
-        assert task.time_cost_for(0.0) == pytest.approx(15.0)
-        # Negative proficiency should be handled identically.
-        assert task.time_cost_for(-0.5) == pytest.approx(15.0)
+        # Proficiency 0.0 clamped to 0.1 → base = 1.5 / 0.1 = 15.0
+        # Skill-gap: 0.65 - 0.1 = 0.55 → penalty = 15.0 × (1 + 0.55 × 2.0) = 15.0 × 2.1 = 31.5
+        assert task.time_cost_for(0.0) == pytest.approx(31.5)
+        # Negative proficiency is clamped to 0.1 identically.
+        assert task.time_cost_for(-0.5) == pytest.approx(31.5)
 
     def test_time_cost_always_positive(self):
         """time_cost_for() should always return a positive number."""
@@ -113,6 +114,33 @@ class TestTask:
         assert times == sorted(times, reverse=True), (
             "Higher proficiency should always produce lower or equal time cost."
         )
+
+    def test_skill_gap_penalty_increases_time_cost(self):
+        """Below-threshold proficiency incurs a skill-gap penalty; above does not."""
+        # Maintenance task: skill_requirement=0.65
+        task = Task(task_type="maintenance", base_time=1.0, skill_requirement=0.65)
+
+        # Proficiency exactly at threshold — no penalty.
+        # Expected: 1.0 / 0.65 ≈ 1.538 (no gap multiplier).
+        at_threshold = task.time_cost_for(0.65)
+        assert at_threshold == pytest.approx(1.0 / 0.65)
+
+        # Proficiency above threshold — no penalty.
+        above_threshold = task.time_cost_for(0.80)
+        assert above_threshold == pytest.approx(1.0 / 0.80)
+
+        # Proficiency below threshold — penalty applies.
+        # proficiency=0.4 → base = 1.0/0.4 = 2.5; gap=0.25 → ×1.5 → 3.75
+        below_threshold = task.time_cost_for(0.40)
+        assert below_threshold == pytest.approx(2.5 * 1.5)
+
+        # An errand (skill_requirement=0.2) at the same low proficiency — no penalty.
+        errand = Task(task_type="errand", base_time=1.0, skill_requirement=0.2)
+        errand_cost = errand.time_cost_for(0.40)
+        assert errand_cost == pytest.approx(1.0 / 0.40)
+
+        # Penalty makes maintenance harder than errand for the same under-skilled agent.
+        assert below_threshold > errand_cost
 
     def test_delegated_flag_default_false(self):
         """Tasks start as not delegated."""
@@ -271,6 +299,30 @@ class TestResidentDelegationDecision:
 
         assert high_stress_count > low_stress_count, (
             "Stressed agents should delegate more than calm agents."
+        )
+
+    def test_skill_gap_affects_delegation_decision(self, minimal_model_type_a):
+        """An agent should be more likely to delegate a task they are under-skilled for."""
+        agent = list(minimal_model_type_a.agents)[0]
+        agent.delegation_preference = 0.40  # moderate baseline
+        agent.stress_level = 0.0
+        agent.available_time = 8.0
+        # Fix proficiency at 0.35 — below maintenance (0.65) but above errand (0.2).
+        agent.skill_set = {t: 0.35 for t in agent.skill_set}
+
+        # Hard task: agent is under-skilled (skill_gap = 0.65 - 0.35 = +0.30).
+        hard_task = Task(task_type="maintenance", base_time=1.5, skill_requirement=0.65,
+                         requester_id=agent.unique_id)
+        # Easy task: agent is over-skilled (skill_gap = 0.2 - 0.35 = -0.15).
+        easy_task = Task(task_type="errand", base_time=0.5, skill_requirement=0.2,
+                         requester_id=agent.unique_id)
+
+        hard_count = sum(agent._should_delegate(hard_task) for _ in range(300))
+        easy_count = sum(agent._should_delegate(easy_task) for _ in range(300))
+
+        assert hard_count > easy_count, (
+            f"Under-skilled agent should delegate hard task more often "
+            f"({hard_count}/300 hard vs {easy_count}/300 easy)."
         )
 
 

@@ -20,9 +20,8 @@ Conceptual design (social science rationale):
       leisure even though everyone sought convenience.
 
     The agent's decision logic is fully explicit and rule-based. No LLM
-    logic lives here. This preserves the "white-box" principle described in
-    CLAUDE.md §6.1 and the interpretability philosophy discussed in
-    Vanhée et al. (2507.05723).
+    logic lives here. This preserves the "white-box" principle and the 
+    interpretability philosophy.
 
 Used by:
     - model/model.py  — creates Resident instances and calls their methods
@@ -80,14 +79,29 @@ class Task:
     def time_cost_for(self, proficiency: float) -> float:
         """Calculate actual hours needed to complete this task at given skill.
 
-        The formula `base_time / effective_proficiency` means:
+        The base formula `base_time / effective_proficiency` captures general
+        skill efficiency:
           - Proficiency 1.0 (expert) → exactly base_time hours.
           - Proficiency 0.5 (novice) → 2× base_time hours.
-          - Proficiency 0.1 (minimum) → 10× base_time (capped to prevent extreme values).
+          - Proficiency 0.1 (minimum clamp) → 10× base_time hours.
 
-        This creates a natural incentive for skilled agents to self-serve:
-        they are efficient, so delegation offers little time saving. Unskilled
-        agents gain more from delegating because self-service is very slow.
+        On top of this, a **skill-gap penalty** applies when proficiency falls
+        below the task's `skill_requirement` threshold. This models the social
+        observation that some tasks have a minimum competency level; without it,
+        execution becomes disproportionately slow — not just linearly slower.
+        For example, a maintenance task requires tools, domain knowledge, and
+        physical technique; below the threshold, an agent struggles rather than
+        simply taking longer.
+
+        Penalty formula: base_cost × (1 + gap × 2.0)
+          - Proficiency at threshold: gap=0 → no penalty (continuous).
+          - Proficiency 0.1 below threshold: gap=0.1 → 1.2× penalty.
+          - Proficiency 0.4 below threshold: gap=0.4 → 1.8× penalty.
+
+        This preserves the monotone relationship (more skill → less time) while
+        making task-type difficulty meaningfully distinct: a maintenance task is
+        much harder for an under-skilled agent than an errand at the same
+        proficiency gap.
 
         Args:
             proficiency: Agent's skill level for this task type [0.0, 1.0].
@@ -96,12 +110,19 @@ class Task:
             Hours required to complete the task (always positive).
 
         Note:
-            Proficiency is clamped to [0.1, 1.0]. The lower bound prevents
-            near-zero proficiency from producing unrealistically long durations
-            that would distort model-level time aggregates.
+            Proficiency is clamped to [0.1, 1.0] before all calculations. The
+            lower bound prevents near-zero proficiency from producing
+            unrealistically long durations that would distort model-level
+            time aggregates.
         """
         effective = max(0.1, min(1.0, proficiency))
-        return self.base_time / effective
+        base_cost = self.base_time / effective
+        # Apply skill-gap penalty when agent is under-qualified for this task type.
+        # The further below the threshold, the more severe the time overrun.
+        if effective < self.skill_requirement:
+            gap = self.skill_requirement - effective
+            base_cost *= (1.0 + gap * 2.0)
+        return base_cost
 
 
 # ---------------------------------------------------------------------------
@@ -278,9 +299,15 @@ class Resident(mesa.Agent):
              relieve time pressure. This is the main feedback loop driving
              involution — stress → delegate more → more demand → providers
              busier → more stress.
-          3. Skill discount: agents skilled at this task type gain less
-             from delegating (they are already fast at it), so skilled agents
-             are slightly less likely to delegate this specific task.
+          3. Skill-gap factor: the difference between the task's skill
+             requirement and the agent's proficiency. A positive gap (agent
+             under-qualified) boosts delegation because the agent knows
+             self-service will be costly. A negative gap (agent over-qualified)
+             reduces delegation because self-service is already fast. This
+             makes delegation decisions task-type-aware: a maintenance task
+             with requirement 0.65 pushes an agent with proficiency 0.3 much
+             harder toward delegation than an errand with requirement 0.2
+             would. Formula: skill_factor = (task.skill_requirement - proficiency) × 0.25
           4. Cost penalty: expensive services reduce delegation incentive —
              rational agents weigh convenience against cost.
 
@@ -294,7 +321,7 @@ class Resident(mesa.Agent):
             True if the agent will delegate this task; False to self-serve.
 
         Note:
-            All coefficients (0.3, 0.2, 0.25) are calibrated to keep the
+            All coefficients (0.3, 0.25, 0.25) are calibrated to keep the
             effective delegation probability within (0, 1) for the full range
             of input values. They are exposed indirectly via the presets but
             are intentionally not individually tunable sliders — adjusting
@@ -319,16 +346,22 @@ class Resident(mesa.Agent):
         # → need to provide services to earn back → more time spent → more stress.
         stress_boost = self.stress_level * 0.30
 
-        # High skill = fast self-service = less incentive to pay for delegation.
-        # This keeps skilled agents as self-servers even in high-delegation societies.
-        skill_discount = proficiency * 0.20
+        # Skill-gap factor: measures how well-matched the agent is to this task.
+        # Positive gap (under-skilled for this task) → boost to delegation:
+        #   the agent knows they'll struggle, so outsourcing is rational.
+        # Negative gap (over-skilled for this task) → reduction in delegation:
+        #   the agent is fast at this, so paying for it offers little time gain.
+        # This makes delegation decisions task-type-aware rather than purely
+        # driven by a flat proficiency discount that ignores task difficulty.
+        skill_gap = task.skill_requirement - proficiency
+        skill_factor = skill_gap * 0.25
 
         # High service cost = economic disincentive to delegate.
         # service_cost_factor ranges 0→1; at 0.25 weight, high cost (1.0)
         # reduces delegation probability by 0.25.
         cost_penalty = self.model.service_cost_factor * 0.25
 
-        effective_p = max(0.0, min(1.0, p + stress_boost - skill_discount - cost_penalty))
+        effective_p = max(0.0, min(1.0, p + stress_boost + skill_factor - cost_penalty))
         return self.random.random() < effective_p
 
     def _execute_task_self(self, task: Task) -> None:
