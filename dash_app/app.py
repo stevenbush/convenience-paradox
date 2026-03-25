@@ -14,7 +14,6 @@ import dash_bootstrap_components as dbc
 from dash import html, dcc, Input, Output, State, ctx
 
 from dash_app.components.charts import apply_chart_theme
-from dash_app.components.controls import simulation_controls
 from dash_app.components.topbar import topbar
 from dash_app.components.sidebar import sidebar
 
@@ -126,14 +125,13 @@ def _register_shell_callbacks(app: dash.Dash) -> None:
 
     @app.callback(
         Output("sidebar-controls", "style"),
-        Output("sidebar-controls", "children"),
         Input("url", "pathname"),
     )
     def toggle_sidebar_controls(pathname: str):
         """Show simulation controls only on the dashboard page."""
         if pathname == "/":
-            return {"display": "block"}, simulation_controls()
-        return {"display": "none"}, []
+            return {"display": "block"}
+        return {"display": "none"}
 
     @app.callback(
         Output("sidebar", "className"),

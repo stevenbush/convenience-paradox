@@ -49,54 +49,79 @@ dash.register_page(
 def _filter_bar() -> html.Div:
     """Search and filter controls above the data table."""
     return card(
-        children=dbc.Row([
-            dbc.Col([
-                html.Label("Search", className="cp-controls__slider-label"),
-                dbc.Input(
-                    id="run-search-input",
-                    placeholder="Search by run name or preset...",
-                    type="text", size="sm", debounce=True,
-                ),
-            ], lg=3, md=6, xs=12),
-            dbc.Col([
-                html.Label("Preset Filter", className="cp-controls__slider-label"),
-                dcc.Dropdown(
-                    id="run-preset-filter",
-                    options=[
-                        {"label": "All Presets", "value": "all"},
-                        {"label": "Type A", "value": "type_a"},
-                        {"label": "Type B", "value": "type_b"},
-                        {"label": "Custom", "value": "custom"},
-                    ],
-                    value="all", clearable=False,
-                    style={"fontSize": "var(--cp-text-sm)"},
-                ),
-            ], lg=2, md=6, xs=12),
-            dbc.Col([
-                html.Label("Date Range", className="cp-controls__slider-label"),
-                dcc.DatePickerRange(
-                    id="run-date-range",
-                    display_format="YYYY-MM-DD",
-                    style={"fontSize": "var(--cp-text-sm)"},
-                ),
-            ], lg=3, md=6, xs=12),
-            dbc.Col([
-                html.Div([
-                    dbc.Button(
-                        [html.I(className="fas fa-save me-1"), "Save Current"],
-                        id="btn-save-run",
-                        className="cp-btn-primary me-2",
-                        size="sm",
+        children=[
+            dbc.Row([
+                dbc.Col([
+                    html.Label("Search", className="cp-controls__slider-label"),
+                    dbc.Input(
+                        id="run-search-input",
+                        placeholder="Search by run name or preset...",
+                        type="text", size="sm", debounce=True,
                     ),
-                    dbc.Button(
-                        [html.I(className="fas fa-trash-alt me-1"), "Delete Selected"],
-                        id="btn-delete-selected",
-                        className="cp-btn-danger",
-                        size="sm",
+                ], lg=4, md=12, xs=12),
+                dbc.Col([
+                    html.Label("Preset Filter", className="cp-controls__slider-label"),
+                    dcc.Dropdown(
+                        id="run-preset-filter",
+                        options=[
+                            {"label": "All Presets", "value": "all"},
+                            {"label": "Type A", "value": "type_a"},
+                            {"label": "Type B", "value": "type_b"},
+                            {"label": "Custom", "value": "custom"},
+                        ],
+                        value="all", clearable=False,
+                        style={"fontSize": "var(--cp-text-sm)"},
                     ),
-                ], className="d-flex align-items-end h-100"),
-            ], lg=4, md=6, xs=12),
-        ], className="g-3 align-items-end"),
+                ], lg=3, md=6, xs=12),
+                dbc.Col([
+                    html.Label("Date Range", className="cp-controls__slider-label"),
+                    dcc.DatePickerRange(
+                        id="run-date-range",
+                        display_format="YYYY-MM-DD",
+                        style={"fontSize": "var(--cp-text-sm)"},
+                    ),
+                ], lg=5, md=6, xs=12),
+            ], className="g-3"),
+            html.Div(className="mb-3"),
+            dbc.Row([
+                dbc.Col([
+                    html.Label("Run Name", className="cp-run-manager__field-label"),
+                    dbc.Input(
+                        id="run-save-name-input",
+                        placeholder="Optional name for current run...",
+                        type="text", size="sm", maxLength=120,
+                        className="cp-run-manager__name-input",
+                    ),
+                    html.Div(
+                        "Used when you click Save Current. Saved runs can still be renamed in the table below.",
+                        className="cp-run-manager__field-hint",
+                    ),
+                ], lg=5, md=12, xs=12),
+                dbc.Col([
+                    html.Div("Run Actions", className="cp-run-manager__field-label"),
+                    html.Div([
+                        dbc.Button(
+                            [html.I(className="fas fa-save me-1"), "Save Current"],
+                            id="btn-save-run",
+                            className="cp-btn-primary cp-run-manager__action-btn cp-run-manager__action-btn--save",
+                            size="sm",
+                        ),
+                        dbc.Button(
+                            [html.I(className="fas fa-pen me-1"), "Update"],
+                            id="btn-update-run-names",
+                            className="cp-btn-outline cp-run-manager__action-btn cp-run-manager__action-btn--update",
+                            size="sm",
+                        ),
+                        dbc.Button(
+                            [html.I(className="fas fa-trash-alt me-1"), "Delete Selected"],
+                            id="btn-delete-selected",
+                            className="cp-btn-danger cp-run-manager__action-btn cp-run-manager__action-btn--delete",
+                            size="sm",
+                        ),
+                    ], className="cp-run-manager__action-bar"),
+                ], lg=7, md=12, xs=12),
+            ], className="g-3 align-items-end"),
+        ],
     )
 
 
@@ -110,23 +135,25 @@ def _runs_table() -> html.Div:
             "suppressSizeToFit": True, "suppressMenu": True,
         },
         {"field": "id", "headerName": "ID", "width": 70, "sortable": True},
-        {"field": "created_at", "headerName": "Date", "width": 160, "sortable": True},
+        {"field": "created_at", "headerName": "Date", "width": 160, "sortable": True,
+         "editable": False},
         {"field": "run_name", "headerName": "Run Name", "flex": 1, "sortable": True,
-         "filter": True, "editable": False},
-        {"field": "preset", "headerName": "Preset", "width": 100, "sortable": True},
+         "filter": True, "editable": True},
+        {"field": "preset", "headerName": "Preset", "width": 100, "sortable": True,
+         "editable": False},
         {"field": "steps_run", "headerName": "Steps", "width": 80, "sortable": True,
-         "type": "numericColumn"},
+         "type": "numericColumn", "editable": False},
         {"field": "final_avg_stress", "headerName": "Stress", "width": 90,
-         "sortable": True, "type": "numericColumn",
+         "sortable": True, "type": "numericColumn", "editable": False,
          "valueFormatter": {"function": "params.value != null ? d3.format('.3f')(params.value) : '—'"}},
         {"field": "final_total_labor_hours", "headerName": "Labor", "width": 90,
-         "sortable": True, "type": "numericColumn",
+         "sortable": True, "type": "numericColumn", "editable": False,
          "valueFormatter": {"function": "params.value != null ? d3.format('.1f')(params.value) : '—'"}},
         {"field": "final_social_efficiency", "headerName": "Efficiency", "width": 100,
-         "sortable": True, "type": "numericColumn",
+         "sortable": True, "type": "numericColumn", "editable": False,
          "valueFormatter": {"function": "params.value != null ? d3.format('.3f')(params.value) : '—'"}},
         {"field": "final_avg_delegation_rate", "headerName": "Deleg Rate", "width": 100,
-         "sortable": True, "type": "numericColumn",
+         "sortable": True, "type": "numericColumn", "editable": False,
          "valueFormatter": {"function": "params.value != null ? d3.format('.3f')(params.value) : '—'"}},
     ]
 
@@ -242,24 +269,58 @@ def load_runs(trigger, search, preset_filter, start_date, end_date):
     Output("runs-refresh-trigger", "data", allow_duplicate=True),
     Output("save-toast", "is_open"),
     Output("save-toast", "children"),
+    Output("run-save-name-input", "value"),
     Input("btn-save-run", "n_clicks"),
+    State("run-save-name-input", "value"),
     prevent_initial_call=True,
 )
-def save_current_run(n_clicks):
+def save_current_run(n_clicks, custom_run_name):
     model = app_state.get_model()
     if model is None or model.current_step == 0:
-        return no_update, True, "No simulation to save. Initialize and run first."
+        return no_update, True, "No simulation to save. Initialize and run first.", no_update
+
+    run_name = (custom_run_name or "").strip()
+    if not run_name:
+        run_name = f"Dashboard run (step {model.current_step})"
 
     try:
         run_id = db.save_run(
             model,
-            label=f"Dashboard run (step {model.current_step})",
+            label=run_name,
             preset=app_state.get_current_preset() or "custom",
         )
         app_state.set_run_id(str(run_id))
-        return run_id, True, f"Run saved as ID {run_id} ({model.current_step} steps)."
+        return run_id, True, f"Run saved as ID {run_id} ({run_name}).", ""
     except Exception as e:
-        return no_update, True, f"Save failed: {e}"
+        return no_update, True, f"Save failed: {e}", no_update
+
+
+@callback(
+    Output("runs-refresh-trigger", "data", allow_duplicate=True),
+    Output("save-toast", "is_open", allow_duplicate=True),
+    Output("save-toast", "children", allow_duplicate=True),
+    Input("btn-update-run-names", "n_clicks"),
+    State("runs-grid", "rowData"),
+    prevent_initial_call=True,
+)
+def update_run_names(n_clicks, rows):
+    """Persist edited Run Name values after the user confirms with Update."""
+    if not rows:
+        return no_update, True, "No runs available to update."
+
+    label_updates: list[tuple[int, str | None]] = []
+    for row in rows:
+        edited_name = str(row.get("run_name") or "").strip()
+        current_name = format_run_label(row)
+        if edited_name != current_name:
+            label_updates.append((int(row["id"]), edited_name or None))
+
+    if not label_updates:
+        return no_update, True, "No Run Name changes to update."
+
+    updated = db.update_run_labels(label_updates)
+    import time
+    return int(time.time()), True, f"Updated {updated} run name(s)."
 
 
 # =========================================================================

@@ -18,6 +18,7 @@ def card(
     footer=None,
     header_right=None,
     class_name: str = "",
+    reserve_subtitle_space: bool = False,
 ) -> html.Div:
     """Create a standard card container.
 
@@ -31,6 +32,7 @@ def card(
         footer: Optional footer content.
         header_right: Optional content on the right side of the header.
         class_name: Additional CSS classes.
+        reserve_subtitle_space: If True, keep a subtitle row even when empty.
     """
     classes = ["cp-card"]
     if flush:
@@ -43,10 +45,19 @@ def card(
     parts = []
 
     if title:
+        subtitle_node = None
+        if subtitle:
+            subtitle_node = html.P(subtitle, className="cp-card__subtitle")
+        elif reserve_subtitle_space:
+            subtitle_node = html.P(
+                "\u00A0",
+                className="cp-card__subtitle cp-card__subtitle--placeholder",
+                **{"aria-hidden": "true"},
+            )
         header_children = [
             html.Div([
                 html.H3(title, className="cp-card__title"),
-                html.P(subtitle, className="cp-card__subtitle") if subtitle else None,
+                subtitle_node,
             ]),
         ]
         if header_right:
@@ -159,4 +170,6 @@ def chart_card(
         children=graph,
         flush=True,
         header_right=header_right,
+        class_name="cp-card--chart",
+        reserve_subtitle_space=True,
     )

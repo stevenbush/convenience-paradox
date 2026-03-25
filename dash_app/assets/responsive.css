@@ -87,4 +87,28 @@
   .cp-page-title {
     font-size: var(--cp-text-xl);
   }
+
+  .cp-run-manager__action-bar {
+    justify-content: stretch;
+  }
+
+  .cp-run-manager__action-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 1199.98px) {
+  .cp-run-manager__action-btn--delete {
+    min-width: 152px;
+  }
+}
+
+@media (max-width: 991.98px) {
+  .cp-run-manager__action-bar {
+    justify-content: flex-start;
+  }
+
+  .cp-run-manager__action-btn {
+    width: 100%;
+  }
 }

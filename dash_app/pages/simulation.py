@@ -155,6 +155,7 @@ def _advanced_viz_row() -> dbc.Row:
 
 layout = html.Div(
     [
+        dcc.Store(id="simulation-page-store", data={"mounted": True}),
         html.Div(
             [
                 html.H2("Simulation Dashboard", className="cp-page-title"),
@@ -228,21 +229,49 @@ def toggle_advanced(n_clicks, is_open):
 
 
 # =========================================================================
-# Callback 3: Slider value display updates
+# Callback 3: Bidirectional slider ↔ number input sync
+#
+# When the slider moves  → format and push value into the number input.
+# When the input changes → clamp to [min, max] and push value into slider.
+# Using allow_duplicate=True so both outputs can be targeted by other
+# callbacks (e.g. apply_preset still writes to slider-{p}.value).
 # =========================================================================
 
 for _pk in _ALL_SLIDER_PARAMS:
     @callback(
-        Output(f"slider-val-{_pk}", "children"),
+        Output(f"slider-{_pk}", "value", allow_duplicate=True),
+        Output(f"input-{_pk}", "value"),
         Input(f"slider-{_pk}", "value"),
+        Input(f"input-{_pk}", "value"),
+        prevent_initial_call=True,
     )
-    def _update_slider_display(val, key=_pk):
-        if val is None:
-            return "—"
+    def _sync_slider_input(slider_val, input_val, key=_pk):
+        """Keep slider and number input in sync when either changes."""
+        triggered = ctx.triggered_id
         pdef = PARAMETER_DEFINITIONS[key]
-        if pdef["type"] is int:
-            return str(int(val))
-        return f"{val:.2f}"
+        p_min, p_max = pdef["min"], pdef["max"]
+
+        if triggered == f"slider-{key}":
+            # Slider moved — update the number input display value
+            if slider_val is None:
+                return no_update, no_update
+            if pdef["type"] is int:
+                display = int(slider_val)
+            else:
+                display = round(float(slider_val), 4)
+            return no_update, display
+        else:
+            # Number input edited — clamp to valid range and update slider
+            if input_val is None:
+                return no_update, no_update
+            try:
+                clamped = float(input_val)
+            except (TypeError, ValueError):
+                return no_update, no_update
+            clamped = max(p_min, min(p_max, clamped))
+            if pdef["type"] is int:
+                clamped = int(clamped)
+            return clamped, no_update
 
 
 # =========================================================================
@@ -351,8 +380,9 @@ def handle_sim_action(n_init, n_step, n_run, n_reset, *state_values):
     Output("kpi-efficiency-value", "children"),
     Output("kpi-gini-value", "children"),
     Input("sim-trigger-store", "data"),
+    Input("simulation-page-store", "data"),
 )
-def update_kpis(trigger):
+def update_kpis(trigger, page_state):
     model = sim_state.get_model()
     if model is None or model.current_step == 0:
         return "—", "—", "—", "—"
@@ -379,8 +409,9 @@ def update_kpis(trigger):
     Output("chart-efficiency", "figure"),
     Output("chart-market-health", "figure"),
     Input("sim-trigger-store", "data"),
+    Input("simulation-page-store", "data"),
 )
-def update_time_series(trigger):
+def update_time_series(trigger, page_state):
     model = sim_state.get_model()
     if model is None:
         return _empty_fig(), _empty_fig(), _empty_fig(), _empty_fig()
@@ -480,8 +511,9 @@ def update_time_series(trigger):
     Output("chart-delegation-dist", "figure"),
     Output("chart-provider-consumer", "figure"),
     Input("sim-trigger-store", "data"),
+    Input("simulation-page-store", "data"),
 )
-def update_distributions(trigger):
+def update_distributions(trigger, page_state):
     model = sim_state.get_model()
     if model is None:
         return _empty_fig(), _empty_fig(), _empty_fig()
@@ -563,8 +595,9 @@ def update_distributions(trigger):
     Output("chart-sankey", "figure"),
     Output("chart-waterfall", "figure"),
     Input("sim-trigger-store", "data"),
+    Input("simulation-page-store", "data"),
 )
-def update_flow_diagrams(trigger):
+def update_flow_diagrams(trigger, page_state):
     model = sim_state.get_model()
     if model is None:
         return _empty_fig(), _empty_fig()
@@ -646,8 +679,9 @@ def update_flow_diagrams(trigger):
 @callback(
     Output("chart-network", "figure"),
     Input("sim-trigger-store", "data"),
+    Input("simulation-page-store", "data"),
 )
-def update_network(trigger):
+def update_network(trigger, page_state):
     model = sim_state.get_model()
     if model is None:
         return _empty_fig()

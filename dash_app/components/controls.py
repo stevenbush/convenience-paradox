@@ -48,7 +48,11 @@ PARAM_LABELS = {
 
 
 def _make_slider(param_key: str) -> html.Div:
-    """Create a labeled slider for one simulation parameter."""
+    """Create a labeled slider + direct number input for one simulation parameter.
+
+    The slider and number input are bidirectionally synced via callbacks in
+    simulation.py — changing either one updates the other.
+    """
     pdef = PARAMETER_DEFINITIONS[param_key]
     label = PARAM_LABELS.get(param_key, param_key)
     default = pdef["default"]
@@ -56,34 +60,40 @@ def _make_slider(param_key: str) -> html.Div:
     p_max = pdef["max"]
 
     if pdef["type"] is int:
-        step = max(1, (p_max - p_min) // 20)
-        slider = dcc.Slider(
-            id=f"slider-{param_key}",
-            min=p_min, max=p_max, step=step,
-            value=default,
-            marks=None,
-            tooltip={"placement": "bottom", "always_visible": False},
-        )
+        slider_step = max(1, (p_max - p_min) // 20)
+        input_step = 1
+        fmt_default = str(int(default))
     else:
-        step = round((p_max - p_min) / 40, 4)
-        slider = dcc.Slider(
-            id=f"slider-{param_key}",
-            min=p_min, max=p_max, step=step,
-            value=default,
-            marks=None,
-            tooltip={"placement": "bottom", "always_visible": False},
-        )
+        slider_step = round((p_max - p_min) / 40, 4)
+        input_step = slider_step
+        fmt_default = f"{default:.2f}"
+
+    slider = dcc.Slider(
+        id=f"slider-{param_key}",
+        min=p_min, max=p_max, step=slider_step,
+        value=default,
+        marks=None,
+        tooltip={"placement": "bottom", "always_visible": False},
+    )
+
+    # Compact inline number input — allows precise value entry alongside the slider
+    number_input = dbc.Input(
+        id=f"input-{param_key}",
+        type="number",
+        value=default,
+        min=p_min,
+        max=p_max,
+        step=input_step,
+        debounce=True,
+        className="cp-slider-input",
+    )
 
     return html.Div(
         [
             html.Div(
                 [
                     html.Span(label),
-                    html.Span(
-                        f"{default}",
-                        id=f"slider-val-{param_key}",
-                        className="cp-controls__slider-value",
-                    ),
+                    number_input,
                 ],
                 className="cp-controls__slider-label",
             ),

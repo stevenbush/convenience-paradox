@@ -33,6 +33,10 @@
   margin: var(--cp-space-1) 0 0 0;
 }
 
+.cp-card__subtitle--placeholder {
+  visibility: hidden;
+}
+
 .cp-card__body {
   padding: var(--cp-space-4) var(--cp-space-5);
 }
@@ -46,6 +50,10 @@
 /* Flush variant — no body padding, for full-bleed charts */
 .cp-card--flush .cp-card__body {
   padding: 0;
+}
+
+.cp-card--chart .cp-card__header {
+  min-height: 92px;
 }
 
 /* Highlight variant — left accent border */
@@ -217,6 +225,40 @@
   font-size: var(--cp-text-xs);
 }
 
+/* Compact number input that sits inline with slider labels.
+   Replaces the read-only value display for direct value entry. */
+.cp-slider-input {
+  width: 62px !important;
+  min-height: 24px !important;
+  height: 24px !important;
+  padding: 0 var(--cp-space-2) !important;
+  font-family: var(--cp-font-mono) !important;
+  font-size: var(--cp-text-xs) !important;
+  font-weight: var(--cp-weight-semibold) !important;
+  color: var(--cp-text-primary) !important;
+  text-align: right !important;
+  border: 1px solid var(--cp-border) !important;
+  border-radius: var(--cp-radius-sm) !important;
+  background: var(--cp-bg) !important;
+  transition: border-color var(--cp-transition-fast),
+              box-shadow var(--cp-transition-fast);
+  /* Remove browser number input spin arrows */
+  -moz-appearance: textfield;
+}
+
+.cp-slider-input::-webkit-outer-spin-button,
+.cp-slider-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.cp-slider-input:focus {
+  border-color: var(--cp-primary) !important;
+  box-shadow: 0 0 0 2px var(--cp-primary-subtle) !important;
+  outline: none !important;
+  background: var(--cp-surface) !important;
+}
+
 .cp-controls__actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -262,6 +304,93 @@
 .cp-btn-danger:hover {
   background-color: var(--cp-danger) !important;
   color: var(--cp-text-inverse) !important;
+}
+
+
+/* --- Form element font reset ---
+   HTML form elements (input, select, textarea) do not inherit font-family
+   from body by default. Override explicitly to match the design system. */
+input,
+textarea,
+select,
+.form-control,
+.form-select,
+.Select-control,
+.Select-placeholder,
+.Select-value-label,
+.Select-input input {
+  font-family: var(--cp-font-sans) !important;
+  font-size: var(--cp-text-sm) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  font-family: var(--cp-font-sans);
+  font-size: var(--cp-text-xs);
+  color: var(--cp-text-tertiary);
+}
+
+/* Dash dcc.Dropdown uses Select internals */
+.VirtualizedSelectOption,
+.VirtualizedSelectFocusedOption {
+  font-family: var(--cp-font-sans);
+  font-size: var(--cp-text-sm);
+}
+
+
+/* --- Run Manager top controls --- */
+.cp-run-manager__field-label {
+  display: block;
+  font-size: var(--cp-text-xs);
+  font-weight: var(--cp-weight-semibold);
+  color: var(--cp-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--cp-space-2);
+}
+
+.cp-run-manager__field-hint {
+  margin-top: var(--cp-space-2);
+  font-size: var(--cp-text-xs);
+  color: var(--cp-text-tertiary);
+  line-height: 1.4;
+}
+
+.cp-run-manager__name-input {
+  min-height: 38px;
+  font-size: var(--cp-text-sm);
+}
+
+.cp-run-manager__name-input::placeholder {
+  font-size: var(--cp-text-xs);
+  color: var(--cp-text-tertiary);
+}
+
+.cp-run-manager__action-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--cp-space-2);
+  flex-wrap: wrap;
+}
+
+.cp-run-manager__action-btn {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--cp-space-4);
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.cp-run-manager__action-btn--save,
+.cp-run-manager__action-btn--update {
+  min-width: 136px;
+}
+
+.cp-run-manager__action-btn--delete {
+  min-width: 168px;
 }
 
 

@@ -2,7 +2,7 @@
 
 from dash import html
 
-from dash_app.components.card import kpi_card
+from dash_app.components.card import card, chart_card, kpi_card
 from dash_app.utils import format_run_label
 
 
@@ -39,3 +39,23 @@ def test_format_run_label_truncates_long_labels() -> None:
     """Long labels should be shortened to keep the comparison legend compact."""
     label = format_run_label({"id": 99, "label": "A very long dashboard experiment label"})
     assert label == "A very long dashboard ..."
+
+
+def test_chart_card_reserves_subtitle_space_when_subtitle_is_missing() -> None:
+    """Chart cards should keep a stable header height even without a subtitle."""
+    component = chart_card("Stress Distribution", "chart-stress-dist", subtitle=None, height="320px")
+
+    assert "cp-card--chart" in component.className
+    header = component.children[0]
+    title_wrap = header.children[0]
+    subtitle = title_wrap.children[1]
+    assert subtitle.className == "cp-card__subtitle cp-card__subtitle--placeholder"
+
+
+def test_card_only_renders_placeholder_subtitle_when_requested() -> None:
+    """Regular cards should not gain empty subtitle rows unless explicitly requested."""
+    component = card("Plain Card", subtitle=None, reserve_subtitle_space=False)
+
+    header = component.children[0]
+    title_wrap = header.children[0]
+    assert title_wrap.children[1] is None

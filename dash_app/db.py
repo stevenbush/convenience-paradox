@@ -173,6 +173,30 @@ def delete_runs(run_ids: list[int]) -> int:
         conn.close()
 
 
+def update_run_labels(label_updates: list[tuple[int, str | None]]) -> int:
+    """Update saved run labels. Returns count of updated rows."""
+    if not label_updates:
+        return 0
+
+    init_db()
+    conn = _get_conn()
+    try:
+        normalized_updates = [
+            (label.strip() if isinstance(label, str) and label.strip() else None, run_id)
+            for run_id, label in label_updates
+        ]
+        conn.executemany(
+            "UPDATE runs SET label = ? WHERE id = ?",
+            normalized_updates,
+        )
+        conn.commit()
+        updated = len(normalized_updates)
+        logger.info("Updated labels for %d runs", updated)
+        return updated
+    finally:
+        conn.close()
+
+
 def save_run(model: Any, label: str | None = None,
              preset: str | None = None) -> int:
     """Persist a completed simulation run to SQLite.

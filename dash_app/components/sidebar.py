@@ -8,6 +8,8 @@ that is visible only on the Simulation Dashboard page.
 
 from dash import html, dcc, page_registry
 
+from dash_app.components.controls import simulation_controls
+
 
 PAGE_ICONS = {
     "/": "fas fa-chart-area",
@@ -55,8 +57,13 @@ def sidebar() -> html.Div:
             # Navigation section
             html.Nav(nav_items, className="cp-sidebar__nav"),
 
-            # Simulation controls section (populated by Page 1 callbacks)
-            html.Div(id="sidebar-controls", className="cp-sidebar__controls"),
+            # Simulation controls remain mounted so navigation does not recreate
+            # the action buttons and accidentally retrigger simulation callbacks.
+            html.Div(
+                simulation_controls(),
+                id="sidebar-controls",
+                className="cp-sidebar__controls",
+            ),
 
             # Footer
             html.Div(
