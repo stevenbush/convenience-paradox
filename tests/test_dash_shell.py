@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 
 import pandas as pd
-from dash import no_update
+from dash import dcc, no_update
 
 import dash_app.db as db
 import dash_app.state as app_state
@@ -39,6 +39,77 @@ def test_sidebar_keeps_simulation_controls_mounted() -> None:
 
     assert sidebar_controls.id == "sidebar-controls"
     assert sidebar_controls.children
+
+
+def test_app_layout_exposes_session_store_for_llm_studio() -> None:
+    """LLM Studio state should live in a root-level session store."""
+    layout = create_app().layout
+    llm_store = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "llm-studio-store"
+    )
+
+    assert llm_store.storage_type == "session"
+    assert llm_store.data == {}
+
+
+def test_llm_studio_parser_input_uses_session_persistence() -> None:
+    """Scenario Parser textarea should preserve draft text across page remounts."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    scenario_tab = llm_studio._tab_scenario()
+    textarea = scenario_tab.children[0].children[0].children[0]
+
+    assert textarea.id == "scenario-input"
+    assert textarea.persistence is True
+    assert textarea.persistence_type == "session"
+
+
+def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:
+    """Stored LLM Studio state should rebuild the active tab and parser result card."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    store_data = {
+        "active_tab": "tab-chat",
+        "scenario": {
+            "description": "Independent households with occasional outsourcing.",
+            "status": "success",
+            "error": None,
+            "elapsed": 1.23,
+            "model": "qwen3.5:4b",
+            "result": {
+                "scenario_summary": "Residents mostly self-serve and delegate only when busy.",
+                "reasoning": "Low delegation and low conformity imply an autonomy-oriented setting.",
+                "delegation_preference_mean": 0.1,
+                "service_cost_factor": 0.5,
+                "social_conformity_pressure": 0.0,
+                "tasks_per_step_mean": 3.0,
+                "num_agents": 100,
+            },
+        },
+    }
+
+    state = llm_studio._normalize_llm_studio_state(store_data)
+    panel = llm_studio._build_scenario_output(state["scenario"])
+
+    assert llm_studio.restore_llm_studio_tab({"mounted": True}, store_data) == "tab-chat"
+    assert panel.className == "cp-card"
+
+    header = panel.children[0]
+    title_wrap = header.children[0]
+    assert title_wrap.children[0].children == "Parsed Parameters"
+    assert title_wrap.children[1].children == "1.2s · qwen3.5:4b"
+
+    body = panel.children[1]
+    assert body.children[0].children == (
+        "Residents mostly self-serve and delegate only when busy."
+    )
+    table = body.children[2]
+    first_row = table.children.children[0]
+    assert first_row.children[0].children == "Delegation Preference Mean"
+    assert first_row.children[1].children == "0.1"
 
 
 def test_save_current_run_persists_active_preset(monkeypatch) -> None:

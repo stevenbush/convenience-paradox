@@ -61,6 +61,9 @@ def _build_layout() -> html.Div:
             # Simulation state trigger — chart callbacks watch this store.
             dcc.Store(id="sim-trigger-store", data={"step": 0, "action": "none"}),
 
+            # LLM Studio UI state — persisted across page navigation in this browser tab.
+            dcc.Store(id="llm-studio-store", data={}, storage_type="session"),
+
             # LLM chat history for the Result Interpreter (Role 3)
             dcc.Store(id="chat-history-store", data=[]),
 
