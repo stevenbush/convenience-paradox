@@ -30,6 +30,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from dash import html, dcc, callback, clientside_callback, Input, Output, State, ctx, no_update
 
+from api.schemas import SimulationParams
 from dash_app.components.card import card
 from dash_app.components.badges import status_badge, llm_status_dot
 from dash_app.components.charts import CHART_COLORWAY
@@ -60,6 +61,34 @@ SCENARIO_PARAM_KEYS = [
     "tasks_per_step_mean",
     "num_agents",
 ]
+
+SCENARIO_PARAM_LABELS = {
+    "delegation_preference_mean": "Delegation Preference Mean",
+    "service_cost_factor": "Service Cost Factor",
+    "social_conformity_pressure": "Social Conformity Pressure",
+    "tasks_per_step_mean": "Tasks Per Step Mean",
+    "num_agents": "Num Agents",
+}
+
+SCENARIO_PARAM_DEFAULTS = {
+    key: SimulationParams().model_dump()[key]
+    for key in SCENARIO_PARAM_KEYS
+}
+
+SCENARIO_DESCRIPTION_EXAMPLE = (
+    "A mid-sized society of around 120 residents relies on delivery, laundry, and "
+    "household services when workdays get crowded. Services are affordable but not "
+    "free, so people still handle some tasks themselves. Neighbours notice each "
+    "other's convenience choices, creating moderate peer pressure to delegate. Most "
+    "residents juggle about 3 to 4 tasks per day."
+)
+
+SCENARIO_NEXT_STEP_GUIDANCE = (
+    "These values map directly to the Simulation Dashboard controls. Use them to set "
+    "delegation, service cost, conformity, workload, and population size, then "
+    "initialize a run and compare stress, delegation rate, and total labor hours over "
+    "30 to 50 steps."
+)
 
 
 def _default_llm_studio_state() -> dict[str, Any]:
@@ -139,6 +168,41 @@ def _format_scenario_value(value: Any) -> str:
     return str(value)
 
 
+def _scenario_param_label(param_key: str) -> str:
+    """Return the display label for one Scenario Parser parameter."""
+    return SCENARIO_PARAM_LABELS.get(param_key, param_key.replace("_", " ").title())
+
+
+def _resolve_scenario_result(result: dict[str, Any] | None) -> dict[str, Any]:
+    """Fill missing Scenario Parser values with neutral defaults and source metadata."""
+    resolved = dict(result or {})
+    parameter_sources: dict[str, str] = {}
+    defaulted_parameters: list[str] = []
+
+    for param_key in SCENARIO_PARAM_KEYS:
+        if resolved.get(param_key) is None:
+            resolved[param_key] = SCENARIO_PARAM_DEFAULTS[param_key]
+            parameter_sources[param_key] = "default"
+            defaulted_parameters.append(param_key)
+        else:
+            parameter_sources[param_key] = "llm"
+
+    if defaulted_parameters:
+        missing_labels = ", ".join(_scenario_param_label(key) for key in defaulted_parameters)
+        resolved["coverage_warning"] = (
+            "Your description did not provide enough detail to infer every parameter. "
+            f"Neutral defaults were used for: {missing_labels}."
+        )
+    else:
+        resolved["coverage_warning"] = ""
+
+    resolved["parameter_sources"] = parameter_sources
+    resolved["defaulted_parameters"] = defaulted_parameters
+    resolved["example_description"] = SCENARIO_DESCRIPTION_EXAMPLE
+    resolved["next_step_guidance"] = SCENARIO_NEXT_STEP_GUIDANCE
+    return resolved
+
+
 def _format_raw_json(raw_response: Any) -> str:
     """Pretty-format the raw LLM output for UI display."""
     if raw_response is None:
@@ -158,12 +222,26 @@ def _build_scenario_param_chips(result: dict[str, Any] | None):
     result = result or {}
     chips = []
     for param_key in SCENARIO_PARAM_KEYS:
+        source = (result.get("parameter_sources") or {}).get(param_key, "llm")
         chips.append(
             html.Div(
                 [
                     html.Div(
-                        param_key.replace("_", " ").title(),
-                        className="cp-scenario__metric-label",
+                        [
+                            html.Span(
+                                _scenario_param_label(param_key),
+                                className="cp-scenario__metric-label",
+                            ),
+                            html.Span(
+                                "Neutral default" if source == "default" else "LLM",
+                                className=(
+                                    "cp-badge cp-badge--warning"
+                                    if source == "default"
+                                    else "cp-badge cp-badge--primary"
+                                ),
+                            ),
+                        ],
+                        className="cp-scenario__metric-header",
                     ),
                     html.Div(
                         _format_scenario_value(result.get(param_key)),
@@ -174,6 +252,22 @@ def _build_scenario_param_chips(result: dict[str, Any] | None):
             )
         )
     return html.Div(chips, className="cp-scenario__metric-grid")
+
+
+def _build_scenario_intro():
+    """Render an inline guide showing what Scenario Parser does and how to use it."""
+    return html.Div(
+        [
+            html.Div("How To Use Scenario Parser", className="cp-scenario-guide__label"),
+            html.Div(
+                "Describe service use, cost, peer pressure, workload, and population. "
+                "The parser returns validated parameters, highlights any neutral defaults, "
+                "and explains how to use the result in the Simulation Dashboard.",
+                className="cp-scenario-guide__text",
+            ),
+        ],
+        className="cp-scenario-guide",
+    )
 
 
 def _build_scenario_raw_output(raw_response: Any, summary_text: str = "View raw LLM JSON"):
@@ -241,7 +335,8 @@ def _complete_scenario_request(
     """Replace the pending assistant turn with the final Scenario Parser reply."""
     state = _normalize_llm_studio_state(store_data)
     scenario_state = state["scenario"]
-    is_success = error is None and result is not None
+    resolved_result = _resolve_scenario_result(result) if error is None and result is not None else None
+    is_success = error is None and resolved_result is not None
 
     for message in scenario_state["history"]:
         if message.get("role") == "assistant" and message.get("request_id") == request_id:
@@ -250,11 +345,11 @@ def _complete_scenario_request(
                 "model": model_name,
                 "elapsed": elapsed,
                 "content": (
-                    (result or {}).get("scenario_summary", "Parsed scenario ready.")
+                    (resolved_result or {}).get("scenario_summary", "Parsed scenario ready.")
                     if is_success else error
                 ),
-                "reasoning": (result or {}).get("reasoning", "") if is_success else "",
-                "result": result if is_success else None,
+                "reasoning": (resolved_result or {}).get("reasoning", "") if is_success else "",
+                "result": resolved_result if is_success else None,
                 "raw_response": raw_response,
                 "error": error,
             })
@@ -266,7 +361,7 @@ def _complete_scenario_request(
             "error": error,
             "elapsed": elapsed,
             "model": model_name,
-            "result": result if is_success else None,
+            "result": resolved_result if is_success else None,
             "raw_response": raw_response,
             "request_id": request_id,
         })
@@ -419,18 +514,31 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
     result = scenario_state.get("result") or {}
     params_rows = []
     for param_key in SCENARIO_PARAM_KEYS:
+        source = (result.get("parameter_sources") or {}).get(param_key, "llm")
         params_rows.append(
             html.Tr([
                 html.Td(
-                    param_key.replace("_", " ").title(),
+                    _scenario_param_label(param_key),
                     style={"fontSize": "var(--cp-text-sm)"},
                 ),
                 html.Td(
-                    _format_scenario_value(result.get(param_key)),
-                    style={
-                        "fontFamily": "var(--cp-font-mono)",
-                        "fontSize": "var(--cp-text-sm)",
-                    },
+                    [
+                        html.Span(
+                            _format_scenario_value(result.get(param_key)),
+                            style={
+                                "fontFamily": "var(--cp-font-mono)",
+                                "fontSize": "var(--cp-text-sm)",
+                            },
+                        ),
+                        html.Span(
+                            "Neutral default" if source == "default" else "LLM-derived",
+                            className=(
+                                "cp-badge cp-badge--warning ms-2"
+                                if source == "default"
+                                else "cp-badge cp-badge--primary ms-2"
+                            ),
+                        ),
+                    ],
                 ),
             ])
         )
@@ -445,6 +553,26 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
             result.get("reasoning", ""),
             className="cp-scenario__reply-reasoning",
         ),
+    ]
+    if result.get("coverage_warning"):
+        children.extend([
+            html.Div("Coverage Warning", className="cp-scenario__section-label"),
+            html.Div(
+                [
+                    html.Div(result.get("coverage_warning"), className="cp-scenario__warning-text"),
+                    html.Div(
+                        "Scenario Description Example",
+                        className="cp-scenario__warning-example-label",
+                    ),
+                    html.Div(
+                        result.get("example_description", SCENARIO_DESCRIPTION_EXAMPLE),
+                        className="cp-scenario__warning-example",
+                    ),
+                ],
+                className="cp-scenario__warning-panel",
+            ),
+        ])
+    children.extend([
         html.Div("Model Parameters", className="cp-scenario__section-label"),
         dbc.Table(
             html.Tbody(params_rows),
@@ -452,7 +580,12 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
             size="sm",
             className="mt-2",
         ),
-    ]
+        html.Div("How To Use These Parameters", className="cp-scenario__section-label"),
+        html.Div(
+            result.get("next_step_guidance", SCENARIO_NEXT_STEP_GUIDANCE),
+            className="cp-scenario__next-step",
+        ),
+    ])
     raw_block = _build_scenario_raw_output(scenario_state.get("raw_response"))
     if raw_block is not None:
         children.extend([
@@ -606,6 +739,7 @@ def _build_model_config_summary(
 def _tab_scenario() -> html.Div:
     """Role 1: Scenario Parser — NL description to model parameters."""
     return html.Div([
+        _build_scenario_intro(),
         dbc.Row([
             dbc.Col([
                 card(
@@ -617,7 +751,11 @@ def _tab_scenario() -> html.Div:
                             [
                                 dbc.Textarea(
                                     id="scenario-input",
-                                    placeholder="Describe a social scenario (e.g., 'A society where everyone uses delivery apps and nobody cooks')...",
+                                    placeholder=(
+                                        "Describe daily life, service use, cost, peer pressure, workload, and "
+                                        "population size when possible.\n\nExample: "
+                                        + SCENARIO_DESCRIPTION_EXAMPLE
+                                    ),
                                     style={"fontSize": "var(--cp-text-sm)"},
                                     className="cp-scenario__input",
                                     maxLength=500,

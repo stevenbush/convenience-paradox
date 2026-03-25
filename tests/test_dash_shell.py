@@ -83,12 +83,15 @@ def test_llm_studio_parser_input_uses_session_persistence() -> None:
     from dash_app.pages import llm_studio
 
     scenario_tab = llm_studio._tab_scenario()
-    conversation_card = scenario_tab.children[0].children[0].children[0]
+    intro = scenario_tab.children[0]
+    conversation_card = scenario_tab.children[1].children[0].children[0]
     card_body = conversation_card.children[1]
     textarea = card_body.children[1].children[0]
     actions = card_body.children[1].children[1]
 
+    assert intro.className == "cp-scenario-guide"
     assert textarea.id == "scenario-input"
+    assert "Describe daily life" in textarea.placeholder
     assert textarea.persistence is True
     assert textarea.persistence_type == "session"
     assert card_body.children[0].id == "scenario-thread"
@@ -273,8 +276,51 @@ def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:
     table = body.children[4]
     first_row = table.children.children[0]
     assert first_row.children[0].children == "Delegation Preference Mean"
-    assert first_row.children[1].children == "0.1"
-    assert "raw LLM JSON" in body.children[6].children[0].children
+    assert first_row.children[1].children[0].children == "0.1"
+    assert first_row.children[1].children[1].children == "LLM-derived"
+    assert body.children[6].children.startswith("These values map directly")
+    assert "raw LLM JSON" in body.children[8].children[0].children
+
+
+def test_llm_studio_uses_neutral_defaults_when_parser_returns_partial_result() -> None:
+    """Missing parser fields should be replaced with neutral defaults and clearly marked."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    pending_state = llm_studio._stage_scenario_request(
+        {},
+        "People are busy and sometimes outsource chores.",
+        "qwen3.5:4b",
+        "req-partial",
+    )
+    store_data = llm_studio._complete_scenario_request(
+        pending_state,
+        "req-partial",
+        "qwen3.5:4b",
+        0.9,
+        result={
+            "scenario_summary": "Residents sometimes outsource chores when busy.",
+            "reasoning": "The prompt hints at mixed behaviour but leaves several dimensions underspecified.",
+            "delegation_preference_mean": 0.55,
+            "service_cost_factor": None,
+            "social_conformity_pressure": None,
+            "tasks_per_step_mean": None,
+            "num_agents": None,
+        },
+        raw_response='{"scenario_summary":"Residents sometimes outsource chores when busy."}',
+    )
+
+    scenario_result = store_data["scenario"]["result"]
+    assert scenario_result["delegation_preference_mean"] == 0.55
+    assert scenario_result["service_cost_factor"] == 0.4
+    assert scenario_result["social_conformity_pressure"] == 0.3
+    assert scenario_result["tasks_per_step_mean"] == 2.5
+    assert scenario_result["num_agents"] == 100
+    assert scenario_result["parameter_sources"]["delegation_preference_mean"] == "llm"
+    assert scenario_result["parameter_sources"]["service_cost_factor"] == "default"
+    assert "Neutral defaults were used for" in scenario_result["coverage_warning"]
+    assert "A mid-sized society" in scenario_result["example_description"]
+    assert "Simulation Dashboard controls" in scenario_result["next_step_guidance"]
 
 
 def test_save_current_run_persists_active_preset(monkeypatch) -> None:
