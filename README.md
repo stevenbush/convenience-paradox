@@ -13,14 +13,14 @@
 The project is built as a full-stack interactive research tool:
 
 
-| Layer            | Technology                                         |
-| ---------------- | -------------------------------------------------- |
-| ABM Engine       | Mesa 3.5.x                                         |
-| Local LLM        | Ollama + Qwen 3.5 4B                               |
-| Web Backend      | Flask REST API                                     |
-| Visualisation    | Plotly.js (interactive) + Matplotlib (publication) |
-| Data Persistence | SQLite                                             |
-| Environment      | Python 3.12, Miniconda3                            |
+| Layer            | Technology                                          |
+| ---------------- | --------------------------------------------------- |
+| ABM Engine       | Mesa 3.5.x                                          |
+| Local LLM        | Ollama + Qwen 3.5 4B                                |
+| Web Dashboard    | Plotly Dash 4.x + dash-bootstrap-components         |
+| Visualisation    | Plotly (interactive) + Matplotlib (publication)     |
+| Data Persistence | SQLite                                              |
+| Environment      | Python 3.12, Miniconda3                             |
 
 
 > **Neutrality notice**: This model explores abstract social dynamics in terms of configurable parameters. It does not characterise, evaluate, or make claims about any specific country, culture, or people. "Type A" and "Type B" are purely abstract parameter configurations.
@@ -62,28 +62,20 @@ Income Gini              0.147 ± 0.026        0.243 ± 0.024    (+65%)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                 Frontend (Flask Templates + JS)               │
-│  Dashboard · Plotly.js Charts · LLM Chat · Parameter Sliders │
-└───────────────────────┬──────────────────────────────────────┘
-                        │  HTTP / JSON
-┌───────────────────────▼──────────────────────────────────────┐
-│                    Flask REST API                             │
-│  /api/simulation/* · /api/llm/* · /api/runs/*                │
-└───────┬───────────────────────────────────┬──────────────────┘
-        │                                   │
-┌───────▼────────────┐          ┌───────────▼──────────────────┐
-│  Mesa ABM Engine   │          │   LLM Service Layer           │
-│  (White-box core)  │          │   (Peripheral roles 1–4)      │
-│  agents.py         │          │   llm_service.py              │
-│  model.py          │          │   Ollama + Qwen 3.5 4B        │
-│  forums.py (exp.)  │          └───────────────────────────────┘
-└────────────────────┘
-        │
-┌───────▼────────────┐
-│  Data Layer        │
-│  Pandas DataFrames │
-│  SQLite (runs.db)  │
-└────────────────────┘
+│               Plotly Dash 4.x Dashboard                      │
+│  Simulation · LLM Studio · Run Manager · Analysis            │
+│  dash_app/pages/ · dash_app/components/ · dash_app/assets/   │
+└────────────────────────┬─────────────────────────────────────┘
+                         │  Python callbacks (direct import)
+          ┌──────────────┼──────────────┐
+          │              │              │
+┌─────────▼──────┐  ┌────▼──────┐  ┌───▼───────────────────────┐
+│ Mesa ABM Engine│  │ LLM Layer │  │   Data Layer               │
+│ (White-box)    │  │ (Periph.) │  │   Pandas DataFrames        │
+│ agents.py      │  │ llm_svc.py│  │   SQLite (runs.db)         │
+│ model.py       │  │ Qwen 3.5  │  │   dash_app/db.py           │
+│ forums.py      │  │ (Ollama)  │  └────────────────────────────┘
+└────────────────┘  └───────────┘
 ```
 
 ### LLM Integration (White-Box Principle)
@@ -141,19 +133,22 @@ This produces **norm convergence dynamics** — the mechanism behind H4.
 
 ## Features
 
-### Interactive Dashboard
+### Interactive Dashboard (Plotly Dash)
 
-- **Preset buttons**: Type A (Autonomy-Oriented) and Type B (Convenience-Oriented)
-- **5 parameter sliders**: delegation preference, service cost, conformity pressure, task load, population
-- **6 Plotly.js charts**: time-series, labour hours, efficiency, stress distribution, delegation distribution, Gini
-- **Run history**: saved runs from SQLite, overlay on current charts for comparison
+Four pages accessed from a fixed sidebar:
+
+- **Simulation Dashboard**: parameter sliders (Type A / Type B presets), 10+ live Plotly charts (time series, distributions, Sankey task-flow, waterfall fee-flow, network graph, skill radar)
+- **LLM Studio**: per-role LLM model selection, scenario parser, chat interpreter, profile generator, chart annotator, agent forums, full audit log
+- **Run Manager**: Dash AG Grid table with search/filter/delete, side-by-side run comparison with metric deltas and overlaid time series
+- **Analysis**: hypothesis scoreboard (H1–H4), Type A vs Type B comparison runner, interactive sensitivity heatmap with on-demand parameter sweep
 
 ### LLM-Enhanced Interface (requires Ollama)
 
-- **Chat panel**: ask questions about the results; the LLM provides grounded narrative explanations
-- **Scenario parser**: describe a society in plain English → parameters are auto-extracted
-- **Chart annotations**: after each run, key insights are auto-generated for each chart
-- **Profile generator**: describe a demographic type → numerical agent attributes (with audit log)
+- **Scenario parser** (Role 1): describe a society in plain English → parameters auto-extracted
+- **Profile generator** (Role 2): describe a demographic type → numerical agent attributes, with full prompt audit log
+- **Chat interpreter** (Role 3): ask questions about live simulation results; LLM provides narrative explanations grounded in current metrics
+- **Chart annotator** (Role 4): auto-generates captions and key insights for dashboard charts
+- **Agent forums** (Role 5, experimental): LLM-driven norm-discussion dialogues with bounded preference updates
 
 ### Experimental: Agent Communication Forums
 
@@ -188,8 +183,8 @@ ollama pull qwen3.5:4b
 ollama pull qwen3:1.7b   # lightweight secondary model
 
 # 4. Run the dashboard
-python run.py
-# → Open http://127.0.0.1:5000 in your browser
+python run_dash.py
+# → Open http://127.0.0.1:8050 in your browser
 ```
 
 ### Manual Dependency Install
@@ -197,8 +192,8 @@ python run.py
 ```bash
 conda create -n convenience-paradox python=3.12 -y
 conda activate convenience-paradox
-pip install mesa==3.5.* mesa-llm==0.3.* flask plotly pandas matplotlib \
-            pydantic ollama scipy networkx
+pip install mesa==3.5.* mesa-llm==0.3.* dash dash-bootstrap-components \
+            dash-ag-grid plotly pandas matplotlib pydantic ollama scipy networkx
 ```
 
 ### Running Tests
@@ -218,29 +213,29 @@ pytest tests/test_llm_service.py -m ollama -v
 ```
 convenience-paradox/
 ├── README.md
-├── run.py                    # Flask entry point
+├── run_dash.py               # Dash dashboard entry point
 ├── environment.yml           # Conda environment spec
-├── requirements.txt          # pip requirements
-├── setup.sh                  # One-step setup script
 ├── CLAUDE.md                 # AI assistant charter
 ├── model/
 │   ├── agents.py             # Resident agent class
 │   ├── model.py              # ConvenienceParadoxModel
 │   ├── params.py             # Type A / Type B presets, parameter metadata
-│   └── forums.py             # Agent Communication Forums (Phase 5 experimental)
+│   └── forums.py             # Agent Communication Forums (experimental)
 ├── api/
-│   ├── app.py                # Flask application factory
-│   ├── routes.py             # REST API endpoints (simulation + forums)
 │   ├── llm_service.py        # Ollama integration (Roles 1–4)
-│   ├── llm_routes.py         # Flask LLM endpoints
+│   ├── llm_audit.py          # LLM call recorder
 │   └── schemas.py            # Pydantic schemas for validation
-├── static/
-│   ├── css/style.css         # Dashboard stylesheet
-│   └── js/
-│       ├── dashboard.js      # Plotly.js charts, controls, data fetching
-│       └── chat.js           # LLM chat widget
-├── templates/
-│   └── index.html            # Single-page dashboard
+├── dash_app/
+│   ├── app.py                # Dash application factory
+│   ├── state.py              # Server-side simulation + LLM state
+│   ├── db.py                 # SQLite utilities (runs.db)
+│   ├── pages/
+│   │   ├── simulation.py     # Simulation Dashboard (10+ charts)
+│   │   ├── llm_studio.py     # LLM Studio (5 roles + audit log)
+│   │   ├── run_manager.py    # Run Manager (AG Grid, comparison)
+│   │   └── analysis.py       # Analysis (hypotheses, A/B, heatmap)
+│   ├── components/           # Reusable Dash component library
+│   └── assets/               # CSS design tokens, custom styles
 ├── analysis/
 │   ├── batch_runs.py         # Parameter sweep scripts (H1–H4)
 │   ├── sensitivity.py        # Sensitivity analysis, heatmaps
@@ -248,11 +243,12 @@ convenience-paradox/
 │   └── reports/              # Markdown analysis reports
 ├── data/
 │   ├── empirical/            # Stylized facts (ILO, OECD, WVS, World Bank)
-│   └── results/              # Saved plots and simulation outputs
+│   └── results/              # Saved plots and simulation outputs (gitignored)
 ├── tests/
-│   ├── test_agents.py        # Agent unit tests (22 tests)
-│   ├── test_model.py         # Model integration tests (37 tests)
-│   └── test_llm_service.py   # LLM service tests (21 + 3 live)
+│   ├── test_agents.py        # Agent unit tests
+│   ├── test_model.py         # Model integration tests
+│   ├── test_forums.py        # Forum tests
+│   └── test_llm_service.py   # LLM schema and integration tests
 └── docs/
     ├── plans/                # Phase execution plans (00–06)
     └── execution_log.md      # Detailed record of what was built

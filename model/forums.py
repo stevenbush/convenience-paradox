@@ -237,6 +237,7 @@ def _run_group_dialogue(
     step: int,
     num_turns: int,
     recorder: Optional["LlmAuditRecorder"] = None,
+    llm_model: Optional[str] = None,
 ) -> GroupSession:
     """Run one group's forum dialogue via Ollama.
 
@@ -278,11 +279,12 @@ def _run_group_dialogue(
         if i > 0:
             speaker_prompt = f"You are: {persona}\n\nRespond to what was just said."
 
+        use_model = llm_model or FORUM_MODEL
         call_messages = messages + [{"role": "user", "content": speaker_prompt}]
         t0 = time.perf_counter()
         try:
             resp = ollama.chat(
-                model=FORUM_MODEL,
+                model=use_model,
                 messages=call_messages,
                 options={"num_predict": 120, "temperature": 0.7, "top_p": 0.9},
                 think=False,
@@ -294,7 +296,7 @@ def _run_group_dialogue(
                 recorder.record_call(
                     role="role_5",
                     call_kind="forum_dialogue_turn",
-                    model=FORUM_MODEL,
+                    model=use_model,
                     think=False,
                     messages=call_messages,
                     raw_response=content,
@@ -312,7 +314,7 @@ def _run_group_dialogue(
                 recorder.record_call(
                     role="role_5",
                     call_kind="forum_dialogue_turn",
-                    model=FORUM_MODEL,
+                    model=use_model,
                     think=False,
                     messages=call_messages,
                     raw_response=None,
@@ -343,6 +345,7 @@ def _run_group_dialogue(
         recorder=recorder,
         step=step,
         agent_ids=[a.unique_id for a in agents],
+        llm_model=llm_model,
     )
     session.outcome = outcome
 
@@ -354,6 +357,7 @@ def _extract_forum_outcome(
     recorder: Optional["LlmAuditRecorder"] = None,
     step: int | None = None,
     agent_ids: Optional[list[int]] = None,
+    llm_model: Optional[str] = None,
 ) -> Optional[ForumOutcome]:
     """Run the outcome extraction LLM call and parse the ForumOutcome.
 
@@ -366,6 +370,7 @@ def _extract_forum_outcome(
     Returns:
         ForumOutcome if successful; None if LLM call fails.
     """
+    use_model = llm_model or FORUM_MODEL
     prompt = OUTCOME_EXTRACTION_PROMPT.format(transcript=transcript[:1200])
     t0 = time.perf_counter()
     messages = [{"role": "user", "content": prompt}]
@@ -373,7 +378,7 @@ def _extract_forum_outcome(
 
     try:
         resp = ollama.chat(
-            model=FORUM_MODEL,
+            model=use_model,
             messages=messages,
             format=ForumOutcome.model_json_schema(),
             options={"num_predict": 200, "temperature": 0.2},
@@ -385,7 +390,7 @@ def _extract_forum_outcome(
                 recorder.record_call(
                     role="role_5",
                     call_kind="forum_outcome_extraction",
-                    model=FORUM_MODEL,
+                    model=use_model,
                     think=False,
                     messages=messages,
                     raw_response=content,
@@ -405,7 +410,7 @@ def _extract_forum_outcome(
             recorder.record_call(
                 role="role_5",
                 call_kind="forum_outcome_extraction",
-                model=FORUM_MODEL,
+                model=use_model,
                 think=False,
                 messages=messages,
                 raw_response=content,
@@ -425,7 +430,7 @@ def _extract_forum_outcome(
             recorder.record_call(
                 role="role_5",
                 call_kind="forum_outcome_extraction",
-                model=FORUM_MODEL,
+                model=use_model,
                 think=False,
                 messages=messages,
                 raw_response=content or None,
@@ -448,6 +453,7 @@ def run_forum_step(
     num_turns: int = DEFAULT_NUM_TURNS,
     recorder: Optional["LlmAuditRecorder"] = None,
     rng_seed: int | None = None,
+    llm_model: Optional[str] = None,
 ) -> ForumSession:
     """Run one forum event for a subset of the model's agents.
 
@@ -498,6 +504,7 @@ def run_forum_step(
             model.current_step,
             num_turns,
             recorder=recorder,
+            llm_model=llm_model,
         )
         session.groups.append(group_session)
 

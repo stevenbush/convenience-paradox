@@ -279,6 +279,7 @@ ROLE1_SYSTEM = textwrap.dedent("""\
 def parse_scenario(
     description: str,
     recorder: Optional["LlmAuditRecorder"] = None,
+    model: Optional[str] = None,
 ) -> dict[str, Any]:
     """Role 1: Convert a natural-language scenario description into model parameters.
 
@@ -288,6 +289,8 @@ def parse_scenario(
 
     Args:
         description: Free-text scenario description from the user.
+        recorder: Optional audit recorder for logging.
+        model: Optional model override (defaults to PRIMARY_MODEL).
 
     Returns:
         Dict matching ParsedScenarioParams schema:
@@ -305,6 +308,7 @@ def parse_scenario(
         prompt,
         ROLE1_SYSTEM,
         ParsedScenarioParams,
+        model=model or PRIMARY_MODEL,
         recorder=recorder,
         role="role_1",
         call_kind="scenario_parser",
@@ -351,6 +355,7 @@ ROLE2_SYSTEM = textwrap.dedent("""\
 def generate_agent_profile(
     demographic_description: str,
     recorder: Optional["LlmAuditRecorder"] = None,
+    model: Optional[str] = None,
 ) -> dict[str, Any]:
     """Role 2: Generate numerical agent attributes from a demographic description.
 
@@ -361,6 +366,8 @@ def generate_agent_profile(
     Args:
         demographic_description: Text describing the agent archetype
             (e.g., "A busy professional with high income but limited time").
+        recorder: Optional audit recorder for logging.
+        model: Optional model override (defaults to SECONDARY_MODEL).
 
     Returns:
         Dict matching AgentProfileOutput schema:
@@ -374,13 +381,11 @@ def generate_agent_profile(
     """
     prompt = f"Agent demographic description:\n\n{demographic_description}"
 
-    # Use the lighter secondary model for batch profile generation.
-    # Quality is sufficient for numerical attribute extraction.
     raw = _chat(
         prompt,
         ROLE2_SYSTEM,
         AgentProfileOutput,
-        model=SECONDARY_MODEL,
+        model=model or SECONDARY_MODEL,
         recorder=recorder,
         role="role_2",
         call_kind="profile_generator",
@@ -467,6 +472,7 @@ def interpret_results(
     context: dict[str, Any],
     history: Optional[list[dict]] = None,
     recorder: Optional["LlmAuditRecorder"] = None,
+    model: Optional[str] = None,
 ) -> dict[str, Any]:
     """Role 3: Generate a narrative interpretation of simulation results.
 
@@ -513,6 +519,7 @@ def interpret_results(
         prompt,
         ROLE3_SYSTEM,
         ResultInterpretation,
+        model=model or PRIMARY_MODEL,
         recorder=recorder,
         role="role_3",
         call_kind="result_interpreter",
@@ -549,6 +556,7 @@ def annotate_visualization(
     chart_metrics: dict[str, Any],
     preset: Optional[str] = None,
     recorder: Optional["LlmAuditRecorder"] = None,
+    model: Optional[str] = None,
 ) -> dict[str, Any]:
     """Role 4: Generate a caption and insight for a dashboard chart.
 
@@ -581,6 +589,7 @@ def annotate_visualization(
         prompt,
         ROLE4_SYSTEM,
         VisualizationAnnotation,
+        model=model or PRIMARY_MODEL,
         recorder=recorder,
         role="role_4",
         call_kind="visualization_annotator",

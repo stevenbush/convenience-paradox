@@ -1,0 +1,53 @@
+/* ==========================================================================
+   Chart Container Styles — Consistent sizing and aspect ratios for Plotly
+   ========================================================================== */
+
+/* Base chart container — fills parent, maintains aspect ratio */
+.cp-chart-container {
+  width: 100%;
+  position: relative;
+}
+
+.cp-chart-container--16x9 {
+  aspect-ratio: 16 / 9;
+}
+
+.cp-chart-container--4x3 {
+  aspect-ratio: 4 / 3;
+}
+
+.cp-chart-container--square {
+  aspect-ratio: 1 / 1;
+}
+
+.cp-chart-container--wide {
+  aspect-ratio: 21 / 9;
+}
+
+/* Fixed-height variant for when aspect-ratio would be too tall/short */
+.cp-chart-container--h300 { height: 300px; }
+.cp-chart-container--h350 { height: 350px; }
+.cp-chart-container--h400 { height: 400px; }
+
+/* Ensure Plotly graph fills its container */
+.cp-chart-container .js-plotly-plot,
+.cp-chart-container .plot-container,
+.cp-chart-container .plotly {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Override Plotly modebar — show on hover only */
+.cp-chart-container .modebar-container {
+  opacity: 0;
+  transition: opacity var(--cp-transition-fast);
+}
+
+.cp-chart-container:hover .modebar-container {
+  opacity: 1;
+}
+
+/* Plotly hover label refinement */
+.cp-chart-container .hoverlayer .hovertext rect {
+  rx: var(--cp-radius-md);
+}
