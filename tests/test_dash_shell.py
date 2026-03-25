@@ -127,7 +127,7 @@ def test_update_run_names_persists_only_changed_rows(monkeypatch) -> None:
         {
             "id": 13,
             "label": "Long descriptive run label for charting",
-            "run_name": format_run_label({"id": 13, "label": "Long descriptive run label for charting"}),
+            "run_name": "Long descriptive run label for charting",
         },
     ]
 
@@ -137,6 +137,47 @@ def test_update_run_names_persists_only_changed_rows(monkeypatch) -> None:
     assert toast_open is True
     assert toast_text == "Updated 1 run name(s)."
     assert captured_updates == [(12, "Experiment B")]
+
+
+def test_list_runs_keeps_full_editable_names_for_long_labels(monkeypatch, tmp_path) -> None:
+    """Editable grid rows should keep full labels instead of truncated display text."""
+    tmp_db = tmp_path / "runs.db"
+    original_init_db = db.init_db
+    original_get_conn = db._get_conn
+
+    monkeypatch.setattr(db, "init_db", lambda db_path=db.DEFAULT_DB_PATH: original_init_db(str(tmp_db)))
+    monkeypatch.setattr(db, "_get_conn", lambda db_path=db.DEFAULT_DB_PATH: original_get_conn(str(tmp_db)))
+
+    db.init_db()
+    conn = db._get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO runs (
+                label, preset, params_json, steps_run,
+                final_avg_stress, final_avg_delegation_rate,
+                final_total_labor_hours, final_social_efficiency
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "Long descriptive run label for charting",
+                "custom",
+                "{}",
+                50,
+                0.01,
+                0.5,
+                400.0,
+                0.55,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    rows = db.list_runs()
+
+    assert rows[0]["run_name"] == "Long descriptive run label for charting"
+    assert rows[0]["run_name_display"] == format_run_label(rows[0])
 
 
 def test_update_run_names_ignores_unchanged_grid_rows() -> None:

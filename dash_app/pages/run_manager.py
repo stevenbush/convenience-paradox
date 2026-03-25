@@ -311,7 +311,8 @@ def update_run_names(n_clicks, rows):
     label_updates: list[tuple[int, str | None]] = []
     for row in rows:
         edited_name = str(row.get("run_name") or "").strip()
-        current_name = format_run_label(row)
+        current_label = str(row.get("label") or "").strip()
+        current_name = current_label or f"Run {row['id']}"
         if edited_name != current_name:
             label_updates.append((int(row["id"]), edited_name or None))
 

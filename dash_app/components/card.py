@@ -19,6 +19,7 @@ def card(
     header_right=None,
     class_name: str = "",
     reserve_subtitle_space: bool = False,
+    tooltip: str | None = None,
 ) -> html.Div:
     """Create a standard card container.
 
@@ -54,9 +55,23 @@ def card(
                 className="cp-card__subtitle cp-card__subtitle--placeholder",
                 **{"aria-hidden": "true"},
             )
+        # When a tooltip is provided, wrap the title with an info icon
+        # that reveals a CSS-only hover tooltip bubble — no callbacks needed.
+        if tooltip:
+            title_node = html.Div(
+                [
+                    html.H3(title, className="cp-card__title"),
+                    html.Span("ⓘ", className="cp-card__info-icon"),
+                    html.Div(tooltip, className="cp-card__tooltip"),
+                ],
+                className="cp-card__title-wrapper",
+            )
+        else:
+            title_node = html.H3(title, className="cp-card__title")
+
         header_children = [
             html.Div([
-                html.H3(title, className="cp-card__title"),
+                title_node,
                 subtitle_node,
             ]),
         ]
@@ -130,6 +145,7 @@ def chart_card(
     aspect: str = "16x9",
     header_right=None,
     height: str | None = None,
+    tooltip: str | None = None,
 ) -> html.Div:
     """Create a card wrapping a Plotly dcc.Graph with consistent sizing.
 
@@ -172,4 +188,5 @@ def chart_card(
         header_right=header_right,
         class_name="cp-card--chart",
         reserve_subtitle_space=True,
+        tooltip=tooltip,
     )

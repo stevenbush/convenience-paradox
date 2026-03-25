@@ -66,7 +66,7 @@ def _kpi_row() -> dbc.Row:
     return dbc.Row(
         [
             dbc.Col(kpi_card("Avg Stress", "—", card_id="kpi-stress"), lg=3, md=6, xs=6),
-            dbc.Col(kpi_card("Total Labor Hours", "—", card_id="kpi-labor"), lg=3, md=6, xs=6),
+            dbc.Col(kpi_card("Current Total Labor Hours", "—", card_id="kpi-labor"), lg=3, md=6, xs=6),
             dbc.Col(kpi_card("Social Efficiency", "—", card_id="kpi-efficiency"), lg=3, md=6, xs=6),
             dbc.Col(kpi_card("Income Gini", "—", card_id="kpi-gini"), lg=3, md=6, xs=6),
         ],
@@ -78,12 +78,29 @@ def _charts_row_1() -> dbc.Row:
     return dbc.Row(
         [
             dbc.Col(
-                chart_card("Total Labor Hours", "chart-labor-hours",
-                           subtitle="H1 — Delegation paradox", height="320px"),
+                chart_card(
+                    "Total Labor Hours", "chart-labor-hours",
+                    subtitle="H1 — Delegation paradox", height="320px",
+                    tooltip=(
+                        "H1: Total labor hours across all agents per step. "
+                        "The delegation paradox predicts that higher delegation rates "
+                        "increase systemic labor rather than reducing it — because "
+                        "providers must work more to serve delegators, creating net "
+                        "negative efficiency at the aggregate level."
+                    ),
+                ),
                 lg=8, md=12,
             ),
             dbc.Col(
-                chart_card("Stress Distribution", "chart-stress-dist", height="320px"),
+                chart_card(
+                    "Stress Distribution", "chart-stress-dist", height="320px",
+                    tooltip=(
+                        "Distribution of stress levels across all agents at the current step. "
+                        "Stress accumulates when an agent's available time falls below their "
+                        "personal threshold. A right-skewed peak indicates most agents are "
+                        "coping; a left-shifted cluster signals systemic overload emerging."
+                    ),
+                ),
                 lg=4, md=12,
             ),
         ],
@@ -95,12 +112,30 @@ def _charts_row_2() -> dbc.Row:
     return dbc.Row(
         [
             dbc.Col(
-                chart_card("Stress & Delegation", "chart-stress-delegation",
-                           subtitle="H2, H3 — Dual axis", height="320px"),
+                chart_card(
+                    "Stress & Delegation", "chart-stress-delegation",
+                    subtitle="H2, H3 — Dual axis", height="320px",
+                    tooltip=(
+                        "H2 & H3: Average stress (left axis) and average delegation "
+                        "preference (right axis) over time. Rising delegation paired with "
+                        "rising stress indicates the convenience spiral (H2). A stable "
+                        "delegation rate with lower stress compared to high-delegation runs "
+                        "supports the autonomy advantage hypothesis (H3)."
+                    ),
+                ),
                 lg=8, md=12,
             ),
             dbc.Col(
-                chart_card("Delegation Preferences", "chart-delegation-dist", height="320px"),
+                chart_card(
+                    "Delegation Preferences", "chart-delegation-dist", height="320px",
+                    tooltip=(
+                        "Distribution of each agent's current delegation preference "
+                        "(0 = always self-serve, 1 = always delegate). H4 predicts mixed "
+                        "systems are unstable: over time the distribution should polarize "
+                        "toward one extreme rather than remaining centred, driven by social "
+                        "conformity pressure among network neighbours."
+                    ),
+                ),
                 lg=4, md=12,
             ),
         ],
@@ -112,17 +147,44 @@ def _charts_row_3() -> dbc.Row:
     return dbc.Row(
         [
             dbc.Col(
-                chart_card("Social Efficiency", "chart-efficiency",
-                           subtitle="H2 — Involution threshold", height="300px"),
+                chart_card(
+                    "Social Efficiency", "chart-efficiency",
+                    subtitle="H2 — Involution threshold", height="300px",
+                    tooltip=(
+                        "H2: Social efficiency = tasks completed ÷ total labor hours. "
+                        "A declining trend signals the onset of involution — the system "
+                        "works more but accomplishes proportionally less. Watch for a "
+                        "threshold where efficiency sharply drops as delegation fraction "
+                        "crosses a critical value."
+                    ),
+                ),
                 lg=4, md=6, xs=12,
             ),
             dbc.Col(
-                chart_card("Market Health", "chart-market-health",
-                           subtitle="Unmatched tasks", height="300px"),
+                chart_card(
+                    "Market Health", "chart-market-health",
+                    subtitle="Unmatched tasks", height="300px",
+                    tooltip=(
+                        "Bars: count of delegated tasks that found no available provider "
+                        "(unmatched). Line: fraction of all tasks that were delegated. "
+                        "High unmatched counts paired with rising delegation fraction signals "
+                        "service market saturation — a key trigger for the involution spiral "
+                        "described in H2."
+                    ),
+                ),
                 lg=4, md=6, xs=12,
             ),
             dbc.Col(
-                chart_card("Provider vs Consumer", "chart-provider-consumer", height="300px"),
+                chart_card(
+                    "Provider vs Consumer", "chart-provider-consumer", height="300px",
+                    tooltip=(
+                        "Each dot is one agent. X-axis: cumulative tasks delegated out "
+                        "(consumer behaviour). Y-axis: cumulative hours spent providing "
+                        "services to others. Colour encodes current stress level (green = "
+                        "low, red = high). Clusters reveal role stratification: pure "
+                        "providers (top-left) vs. pure consumers (bottom-right)."
+                    ),
+                ),
                 lg=4, md=12,
             ),
         ],
@@ -134,18 +196,42 @@ def _advanced_viz_row() -> dbc.Row:
     return dbc.Row(
         [
             dbc.Col(
-                chart_card("Task Flow", "chart-sankey",
-                           subtitle="Service pipeline", height="350px"),
+                chart_card(
+                    "Task Flow", "chart-sankey",
+                    subtitle="Service pipeline", height="350px",
+                    tooltip=(
+                        "Sankey diagram of the current step's task pipeline: tasks "
+                        "generated → split into self-served vs. delegated → further split "
+                        "into matched vs. unmatched. Wider bands indicate higher flow volume. "
+                        "Shows how the service market routes economic activity each step."
+                    ),
+                ),
                 lg=4, md=6, xs=12,
             ),
             dbc.Col(
-                chart_card("Fee Flow", "chart-waterfall",
-                           subtitle="Economic transfer", height="350px"),
+                chart_card(
+                    "Fee Flow", "chart-waterfall",
+                    subtitle="Economic transfer", height="350px",
+                    tooltip=(
+                        "Waterfall chart of economic transfers per step: income flows from "
+                        "delegating agents to their service providers, proportional to task "
+                        "complexity and the Service Cost parameter. Growing cumulative bars "
+                        "indicate increasing market volume and economic stratification."
+                    ),
+                ),
                 lg=4, md=6, xs=12,
             ),
             dbc.Col(
-                chart_card("Network Topology", "chart-network",
-                           subtitle="Agent connections", height="350px"),
+                chart_card(
+                    "Network Topology", "chart-network",
+                    subtitle="Agent connections", height="350px",
+                    tooltip=(
+                        "Force-directed graph of the agent social network. Node colour "
+                        "encodes stress level; node size reflects cumulative hours spent "
+                        "providing services. Edges represent social ties through which "
+                        "delegation norms spread via the Conformity Pressure parameter."
+                    ),
+                ),
                 lg=4, md=12,
             ),
         ],
@@ -437,27 +523,37 @@ def update_time_series(trigger, page_state):
     )
 
     # Chart 2: Stress & Delegation (dual axis)
+    stress_color = CHART_COLORWAY[4]
+    delegation_color = CHART_COLORWAY[5]
     fig_sd = go.Figure()
     fig_sd.add_trace(go.Scatter(
         x=steps, y=df["avg_stress"],
-        mode="lines", name="Avg Stress",
-        line=dict(color=CHART_COLORWAY[4], width=2),
+        mode="lines", name="Avg Stress (left axis)",
+        line=dict(color=stress_color, width=2.5),
+        hovertemplate="Step %{x}<br>Avg Stress: %{y:.3f}<extra></extra>",
     ))
     fig_sd.add_trace(go.Scatter(
         x=steps, y=df["avg_delegation_rate"],
-        mode="lines", name="Avg Delegation",
-        line=dict(color=CHART_COLORWAY[1], width=2),
+        mode="lines", name="Avg Delegation (right axis)",
+        line=dict(color=delegation_color, width=2.5, dash="dash"),
+        hovertemplate="Step %{x}<br>Avg Delegation: %{y:.3f}<extra></extra>",
         yaxis="y2",
     ))
     fig_sd.update_layout(
         xaxis_title="Step",
-        yaxis=dict(title="Stress", side="left"),
+        yaxis=dict(
+            title="Stress",
+            side="left",
+        ),
         yaxis2=dict(
-            title="Delegation Preference", side="right",
-            overlaying="y", showgrid=False,
+            title="Delegation Preference",
+            side="right",
+            overlaying="y",
+            showgrid=False,
             range=[0, 1],
         ),
         margin=dict(t=10, b=40, l=56, r=56),
+        legend=dict(orientation="h", y=1.08, x=0, traceorder="normal"),
     )
 
     # Chart 3: Social Efficiency (H2)
@@ -498,6 +594,19 @@ def update_time_series(trigger, page_state):
         margin=dict(t=10, b=40, l=56, r=56),
         barmode="overlay",
     )
+    # When every unmatched_tasks value is 0 the bar series is invisible.
+    # Add a centred annotation to communicate this positive outcome.
+    if df["unmatched_tasks"].sum() == 0:
+        fig_mh.add_annotation(
+            text="All delegated tasks matched — no unmatched tasks",
+            xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False,
+            font=dict(size=12, color="#27AE60"),
+            bgcolor="rgba(232,248,239,0.85)",
+            bordercolor="#27AE60",
+            borderwidth=1,
+            borderpad=6,
+        )
 
     return fig_labor, fig_sd, fig_eff, fig_mh
 
@@ -566,6 +675,8 @@ def update_distributions(trigger, page_state):
         marker=dict(
             color=stress_vals,
             colorscale="RdYlGn_r",
+            cmin=0,
+            cmax=1,
             size=8,
             opacity=0.7,
             colorbar=dict(title="Stress", thickness=12, len=0.7),

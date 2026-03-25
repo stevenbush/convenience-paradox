@@ -110,7 +110,13 @@ def list_runs(
         results = []
         for row in rows:
             row_dict = dict(row)
-            row_dict["run_name"] = format_run_label(row_dict)
+            raw_label = row_dict.get("label")
+            row_dict["run_name"] = (
+                str(raw_label).strip()
+                if raw_label is not None and str(raw_label).strip()
+                else f"Run {row_dict['id']}"
+            )
+            row_dict["run_name_display"] = format_run_label(row_dict)
             results.append(row_dict)
         return results
     finally:

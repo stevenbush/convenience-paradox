@@ -27,6 +27,69 @@
   margin: 0;
 }
 
+/* --- Card title tooltip (CSS-only, no callbacks) ---
+   Wrap title + ⓘ icon + bubble. Bubble appears on wrapper hover. */
+.cp-card__title-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cp-space-2);
+  cursor: default;
+}
+
+/* ⓘ icon — subtle until hovered */
+.cp-card__info-icon {
+  font-size: 13px;
+  font-style: normal;
+  color: var(--cp-text-tertiary);
+  line-height: 1;
+  cursor: help;
+  transition: color var(--cp-transition-fast);
+  flex-shrink: 0;
+}
+
+.cp-card__title-wrapper:hover .cp-card__info-icon {
+  color: var(--cp-primary);
+}
+
+/* Tooltip bubble */
+.cp-card__tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 1050;
+  width: 280px;
+  padding: var(--cp-space-3) var(--cp-space-4);
+  background: var(--cp-text-primary);
+  color: var(--cp-text-inverse);
+  font-size: var(--cp-text-xs);
+  font-weight: var(--cp-weight-normal);
+  line-height: var(--cp-leading-relaxed);
+  border-radius: var(--cp-radius-md);
+  box-shadow: var(--cp-shadow-xl);
+  /* Hidden by default */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--cp-transition-fast);
+}
+
+/* Small arrow pointing up */
+.cp-card__tooltip::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 14px;
+  width: 10px;
+  height: 10px;
+  background: var(--cp-text-primary);
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+
+.cp-card__title-wrapper:hover .cp-card__tooltip {
+  opacity: 1;
+}
+
 .cp-card__subtitle {
   font-size: var(--cp-text-xs);
   color: var(--cp-text-tertiary);
