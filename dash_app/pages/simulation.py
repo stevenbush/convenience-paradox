@@ -258,7 +258,8 @@ for _pk in _ALL_SLIDER_PARAMS:
     Input("btn-reset", "n_clicks"),
     [State(f"slider-{p}", "value") for p in _ALL_SLIDER_PARAMS]
     + [State("radio-network-type", "value"),
-       State("input-run-steps", "value")],
+       State("input-run-steps", "value"),
+       State("preset-selector", "value")],
     prevent_initial_call=True,
 )
 def handle_sim_action(n_init, n_step, n_run, n_reset, *state_values):
@@ -271,6 +272,7 @@ def handle_sim_action(n_init, n_step, n_run, n_reset, *state_values):
     slider_vals = list(state_values[:len(_ALL_SLIDER_PARAMS)])
     network_type = state_values[len(_ALL_SLIDER_PARAMS)]
     run_steps = state_values[len(_ALL_SLIDER_PARAMS) + 1] or 50
+    preset_name = state_values[len(_ALL_SLIDER_PARAMS) + 2]
 
     now = datetime.now().isoformat()
 
@@ -283,6 +285,8 @@ def handle_sim_action(n_init, n_step, n_run, n_reset, *state_values):
 
         model = ConvenienceParadoxModel(**params)
         sim_state.set_model(model)
+        sim_state.set_run_id(None)
+        sim_state.set_current_preset(preset_name or "custom")
         logger.info("Simulation initialized with %d agents", params["num_agents"])
 
         status = html.Span(

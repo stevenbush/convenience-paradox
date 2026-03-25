@@ -29,6 +29,7 @@ from dash_app.components.charts import CHART_COLORWAY
 from dash_app.components.empty_states import empty_state
 import dash_app.db as db
 import dash_app.state as app_state
+from dash_app.utils import format_run_label
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ dash.register_page(
     name="Run Manager",
     order=2,
 )
+
 
 
 # =========================================================================
@@ -52,7 +54,7 @@ def _filter_bar() -> html.Div:
                 html.Label("Search", className="cp-controls__slider-label"),
                 dbc.Input(
                     id="run-search-input",
-                    placeholder="Search by label...",
+                    placeholder="Search by run name or preset...",
                     type="text", size="sm", debounce=True,
                 ),
             ], lg=3, md=6, xs=12),
@@ -102,13 +104,14 @@ def _runs_table() -> html.Div:
     """Dash AG Grid table for experiment run history."""
     column_defs = [
         {
-            "field": "id", "headerName": "", "checkboxSelection": True,
-            "headerCheckboxSelection": True, "width": 50, "pinned": "left",
-            "suppressSizeToFit": True,
+            "headerName": "", "checkboxSelection": True,
+            "headerCheckboxSelection": True, "width": 54, "pinned": "left",
+            "sortable": False, "filter": False, "resizable": False,
+            "suppressSizeToFit": True, "suppressMenu": True,
         },
         {"field": "id", "headerName": "ID", "width": 70, "sortable": True},
         {"field": "created_at", "headerName": "Date", "width": 160, "sortable": True},
-        {"field": "label", "headerName": "Label", "flex": 1, "sortable": True,
+        {"field": "run_name", "headerName": "Run Name", "flex": 1, "sortable": True,
          "filter": True, "editable": False},
         {"field": "preset", "headerName": "Preset", "width": 100, "sortable": True},
         {"field": "steps_run", "headerName": "Steps", "width": 80, "sortable": True,
@@ -248,7 +251,12 @@ def save_current_run(n_clicks):
         return no_update, True, "No simulation to save. Initialize and run first."
 
     try:
-        run_id = db.save_run(model, label=f"Dashboard run (step {model.current_step})")
+        run_id = db.save_run(
+            model,
+            label=f"Dashboard run (step {model.current_step})",
+            preset=app_state.get_current_preset() or "custom",
+        )
+        app_state.set_run_id(str(run_id))
         return run_id, True, f"Run saved as ID {run_id} ({model.current_step} steps)."
     except Exception as e:
         return no_update, True, f"Save failed: {e}"
@@ -364,9 +372,7 @@ def update_comparison(selected):
             step_nums = [s.get("step", j) for j, s in enumerate(steps_data)]
 
             color = CHART_COLORWAY[i % len(CHART_COLORWAY)]
-            run_label = run_row.get("label", f"Run {run_row['id']}")
-            if len(run_label) > 25:
-                run_label = run_label[:22] + "..."
+            run_label = format_run_label(run_row)
 
             stress_vals = [s.get("avg_stress", 0) for s in steps_data]
             overlay_fig.add_trace(go.Scatter(

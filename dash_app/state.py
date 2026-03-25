@@ -22,6 +22,7 @@ _lock = threading.Lock()
 _model = None
 _run_id: str | None = None
 _is_running: bool = False
+_current_preset: str | None = None
 
 # Session-level LLM audit log (list of call dicts, newest last)
 _audit_log: list[dict[str, Any]] = []
@@ -52,11 +53,12 @@ def set_model(model) -> None:
 
 def clear_model() -> None:
     """Remove the current simulation model (reset)."""
-    global _model, _run_id, _is_running
+    global _model, _run_id, _is_running, _current_preset
     with _lock:
         _model = None
         _run_id = None
         _is_running = False
+        _current_preset = None
 
 
 def get_run_id() -> str | None:
@@ -64,10 +66,11 @@ def get_run_id() -> str | None:
     return _run_id
 
 
-def set_run_id(rid: str) -> None:
+def set_run_id(rid: str | None) -> None:
     """Set the current run ID after saving to the database."""
     global _run_id
-    _run_id = rid
+    with _lock:
+        _run_id = rid
 
 
 def is_running() -> bool:
@@ -94,8 +97,21 @@ def get_status() -> dict[str, Any]:
         "current_step": m.current_step if m else 0,
         "is_running": _is_running,
         "run_id": _run_id,
+        "current_preset": _current_preset,
         "num_agents": m.num_agents if m else 0,
     }
+
+
+def get_current_preset() -> str | None:
+    """Return the active preset selection for the current simulation."""
+    return _current_preset
+
+
+def set_current_preset(preset: str | None) -> None:
+    """Store the active preset selection used to initialize the model."""
+    global _current_preset
+    with _lock:
+        _current_preset = preset
 
 
 # --- LLM audit log ---

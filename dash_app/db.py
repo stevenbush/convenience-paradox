@@ -14,6 +14,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from dash_app.utils import format_run_label
+
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -82,9 +84,15 @@ def list_runs(
         params: list[Any] = []
 
         if search and search.strip():
-            query += " AND (label LIKE ? OR preset LIKE ?)"
+            query += """
+                AND (
+                    COALESCE(NULLIF(TRIM(label), ''), 'Run ' || id) LIKE ?
+                    OR preset LIKE ?
+                    OR CAST(id AS TEXT) LIKE ?
+                )
+            """
             like = f"%{search.strip()}%"
-            params.extend([like, like])
+            params.extend([like, like, like])
 
         if preset_filter and preset_filter != "all":
             query += " AND preset = ?"
@@ -99,7 +107,12 @@ def list_runs(
 
         query += f" ORDER BY id DESC LIMIT {int(limit)}"
         rows = conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
+        results = []
+        for row in rows:
+            row_dict = dict(row)
+            row_dict["run_name"] = format_run_label(row_dict)
+            results.append(row_dict)
+        return results
     finally:
         conn.close()
 

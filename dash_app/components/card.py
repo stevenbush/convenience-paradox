@@ -82,18 +82,26 @@ def kpi_card(
         delta_direction: One of "up", "down", "neutral".
         card_id: HTML id for dynamic updates.
     """
+    value_props = {"className": "cp-kpi__value"}
+    if card_id:
+        value_props["id"] = f"{card_id}-value"
+
     children = [
         html.Div(label, className="cp-kpi__label"),
-        html.Div(value, className="cp-kpi__value", id=f"{card_id}-value" if card_id else None),
+        html.Div(value, **value_props),
     ]
 
     if delta is not None:
         arrow = {"up": "▲ ", "down": "▼ ", "neutral": ""}
+        delta_props = {
+            "className": f"cp-kpi__delta cp-kpi__delta--{delta_direction}",
+        }
+        if card_id:
+            delta_props["id"] = f"{card_id}-delta"
         children.append(
             html.Span(
                 f"{arrow.get(delta_direction, '')}{delta}",
-                className=f"cp-kpi__delta cp-kpi__delta--{delta_direction}",
-                id=f"{card_id}-delta" if card_id else None,
+                **delta_props,
             )
         )
 

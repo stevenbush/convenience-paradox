@@ -11,7 +11,7 @@ Creates a multi-page Dash app with:
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import html, dcc, Input, Output, callback
+from dash import html, dcc, Input, Output, State, ctx
 
 from dash_app.components.charts import apply_chart_theme
 from dash_app.components.controls import simulation_controls
@@ -81,9 +81,29 @@ def _build_layout() -> html.Div:
                 ],
                 className="cp-shell",
             ),
+            html.Div(id="sidebar-backdrop", n_clicks=0),
         ],
         id="app-root",
     )
+
+
+def _sidebar_classes(is_open: bool) -> tuple[str, str]:
+    """Return shell class names for the mobile sidebar and its backdrop."""
+    sidebar_class = "cp-sidebar cp-sidebar--open" if is_open else "cp-sidebar"
+    backdrop_class = "cp-sidebar-backdrop" if is_open else ""
+    return sidebar_class, backdrop_class
+
+
+def _resolve_sidebar_toggle(triggered_id: str | None,
+                            current_class: str | None) -> tuple[str, str]:
+    """Resolve whether the mobile sidebar should be open after a shell event."""
+    is_open = "cp-sidebar--open" in (current_class or "")
+
+    if triggered_id == "sidebar-toggle":
+        return _sidebar_classes(not is_open)
+    if triggered_id in {"sidebar-backdrop", "url"}:
+        return _sidebar_classes(False)
+    return _sidebar_classes(is_open)
 
 
 def _register_shell_callbacks(app: dash.Dash) -> None:
@@ -114,3 +134,16 @@ def _register_shell_callbacks(app: dash.Dash) -> None:
         if pathname == "/":
             return {"display": "block"}, simulation_controls()
         return {"display": "none"}, []
+
+    @app.callback(
+        Output("sidebar", "className"),
+        Output("sidebar-backdrop", "className"),
+        Input("sidebar-toggle", "n_clicks"),
+        Input("sidebar-backdrop", "n_clicks"),
+        Input("url", "pathname"),
+        State("sidebar", "className"),
+        prevent_initial_call=True,
+    )
+    def toggle_mobile_sidebar(n_toggle, n_backdrop, pathname, current_class):
+        """Open and close the off-canvas sidebar on phone-sized layouts."""
+        return _resolve_sidebar_toggle(ctx.triggered_id, current_class)
