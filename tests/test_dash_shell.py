@@ -1,5 +1,6 @@
 """Tests for Dash shell helpers and page callbacks."""
 
+import sys
 from types import SimpleNamespace
 
 import pandas as pd
@@ -8,6 +9,7 @@ from dash import dcc, no_update
 import dash_app.db as db
 import dash_app.state as app_state
 from dash_app.app import _resolve_sidebar_toggle, create_app
+from dash_app.components.controls import simulation_controls
 from dash_app.components.sidebar import sidebar
 from dash_app.utils import format_run_label
 
@@ -35,10 +37,27 @@ def test_resolve_sidebar_toggle_closes_sidebar_on_backdrop_or_navigation() -> No
 def test_sidebar_keeps_simulation_controls_mounted() -> None:
     """Navigation should hide sidebar controls rather than recreating them."""
     component = sidebar()
+    nav = component.children[0]
     sidebar_controls = component.children[1]
 
     assert sidebar_controls.id == "sidebar-controls"
     assert sidebar_controls.children
+    assert "cp-sidebar__nav" in nav.className
+
+
+def test_simulation_actions_render_before_parameter_sections() -> None:
+    """High-frequency simulation buttons should appear near the top of the sidebar."""
+    controls = simulation_controls()
+
+    section_titles = [
+        child.children[0].children
+        for child in controls.children
+        if getattr(child, "children", None)
+        and isinstance(child.children, list)
+        and getattr(child.children[0], "className", "") == "cp-controls__section-title"
+    ]
+
+    assert section_titles[:2] == ["PRESET", "SIMULATION"]
 
 
 def test_app_layout_exposes_session_store_for_llm_studio() -> None:
@@ -51,6 +70,11 @@ def test_app_layout_exposes_session_store_for_llm_studio() -> None:
 
     assert llm_store.storage_type == "session"
     assert llm_store.data == {}
+    scenario_queue = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "scenario-parse-request-store"
+    )
+    assert scenario_queue.data is None
 
 
 def test_llm_studio_parser_input_uses_session_persistence() -> None:
@@ -59,57 +83,198 @@ def test_llm_studio_parser_input_uses_session_persistence() -> None:
     from dash_app.pages import llm_studio
 
     scenario_tab = llm_studio._tab_scenario()
-    textarea = scenario_tab.children[0].children[0].children[0]
+    conversation_card = scenario_tab.children[0].children[0].children[0]
+    card_body = conversation_card.children[1]
+    textarea = card_body.children[1].children[0]
+    actions = card_body.children[1].children[1]
 
     assert textarea.id == "scenario-input"
     assert textarea.persistence is True
     assert textarea.persistence_type == "session"
+    assert card_body.children[0].id == "scenario-thread"
+    assert actions.children[0].id == "btn-parse-scenario"
+    assert actions.children[1].id == "btn-clear-scenario"
+    assert actions.children[1].children[1] == "Clear Conversation"
 
 
-def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:
-    """Stored LLM Studio state should rebuild the active tab and parser result card."""
+def test_model_configuration_is_collapsed_by_default() -> None:
+    """Model Configuration should default to collapsed to save vertical space."""
     create_app()
     from dash_app.pages import llm_studio
 
-    store_data = {
-        "active_tab": "tab-chat",
-        "scenario": {
-            "description": "Independent households with occasional outsourcing.",
-            "status": "success",
-            "error": None,
-            "elapsed": 1.23,
-            "model": "qwen3.5:4b",
-            "result": {
-                "scenario_summary": "Residents mostly self-serve and delegate only when busy.",
-                "reasoning": "Low delegation and low conformity imply an autonomy-oriented setting.",
-                "delegation_preference_mean": 0.1,
-                "service_cost_factor": 0.5,
-                "social_conformity_pressure": 0.0,
-                "tasks_per_step_mean": 3.0,
-                "num_agents": 100,
-            },
+    panel = llm_studio._model_config_panel()
+    collapse = panel.children[1]
+
+    assert collapse.id == "model-config-collapse"
+    assert collapse.is_open is False
+
+
+def test_llm_studio_refreshes_models_on_page_mount(monkeypatch) -> None:
+    """Available Ollama models should populate role selectors on initial page load."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    fake_models = SimpleNamespace(
+        models=[
+            SimpleNamespace(model="qwen3.5:4b"),
+            SimpleNamespace(model="qwen3:1.7b"),
+        ]
+    )
+    monkeypatch.setitem(sys.modules, "ollama", SimpleNamespace(list=lambda: fake_models))
+
+    outputs = llm_studio.refresh_models({"mounted": True}, None)
+
+    options = outputs[0]
+    values = outputs[5:10]
+    statuses = outputs[10:15]
+
+    assert {"label": "qwen3.5:4b", "value": "qwen3.5:4b"} in options
+    assert values[0] == "qwen3.5:4b"
+    assert values[1] == "qwen3:1.7b"
+    assert all(status == "cp-status-dot cp-status-dot--online" for status in statuses)
+
+
+def test_model_config_summary_shows_role_model_chips() -> None:
+    """Collapsed header should expose compact per-role model status chips."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    summary = llm_studio._build_model_config_summary(
+        {
+            "role_1": "qwen3.5:4b",
+            "role_2": "qwen3:1.7b",
+            "role_3": "qwen3.5:4b",
+            "role_4": "qwen3.5:4b",
+            "role_5": "qwen3.5:4b",
         },
-    }
+        {role: "cp-status-dot cp-status-dot--online" for role, *_ in llm_studio.ROLES},
+    )
+
+    assert summary.className == "cp-model-summary__list"
+    first_chip = summary.children[0]
+    assert first_chip.className == "cp-model-summary__chip"
+    assert first_chip.children[1].children == "R1"
+    assert first_chip.children[2].children == "qwen3.5:4b"
+
+
+def test_model_config_summary_shows_neutral_state_when_no_models_available() -> None:
+    """Collapsed header should make a lack of local models obvious."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    summary = llm_studio._build_model_config_summary(
+        {role: "" for role, *_ in llm_studio.ROLES},
+        {role: "cp-status-dot cp-status-dot--offline" for role, *_ in llm_studio.ROLES},
+    )
+
+    assert summary.className == "cp-badge cp-badge--neutral"
+    assert summary.children == "No local LLM model available"
+
+
+def test_llm_studio_stages_pending_scenario_request() -> None:
+    """Submitting a scenario should create a user turn and a pending assistant turn."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    state = llm_studio._stage_scenario_request(
+        {},
+        "Independent households with occasional outsourcing.",
+        "qwen3.5:4b",
+        "req-1",
+    )
+
+    scenario_state = state["scenario"]
+    assert scenario_state["status"] == "pending"
+    assert scenario_state["request_id"] == "req-1"
+    assert len(scenario_state["history"]) == 2
+    assert scenario_state["history"][0]["role"] == "user"
+    assert scenario_state["history"][1]["status"] == "pending"
+
+
+def test_llm_studio_clear_resets_scenario_conversation() -> None:
+    """Clear should wipe the transcript and inspector so the user can start over."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    pending_state = llm_studio._stage_scenario_request(
+        {},
+        "A busy society that outsources household tasks.",
+        "qwen3.5:4b",
+        "req-clear",
+    )
+    store_data = llm_studio._complete_scenario_request(
+        pending_state,
+        "req-clear",
+        "qwen3.5:4b",
+        1.1,
+        result={
+            "scenario_summary": "Residents delegate routine work when schedules become tight.",
+            "reasoning": "Moderate delegation and workload pressure fit an outsourcing-heavy system.",
+            "delegation_preference_mean": 0.65,
+            "service_cost_factor": 0.35,
+            "social_conformity_pressure": 0.4,
+            "tasks_per_step_mean": 3.5,
+            "num_agents": 100,
+        },
+        raw_response='{"scenario_summary":"Residents delegate routine work when schedules become tight."}',
+    )
+
+    cleared_state, cleared_input = llm_studio.clear_scenario_conversation(1, store_data)
+
+    assert cleared_input == ""
+    assert cleared_state["scenario"] == llm_studio._default_scenario_state()
+
+
+def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:
+    """Stored LLM Studio state should rebuild the active tab, transcript, and inspector."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    pending_state = llm_studio._stage_scenario_request(
+        {"active_tab": "tab-chat"},
+        "Independent households with occasional outsourcing.",
+        "qwen3.5:4b",
+        "req-1",
+    )
+    store_data = llm_studio._complete_scenario_request(
+        pending_state,
+        "req-1",
+        "qwen3.5:4b",
+        1.23,
+        result={
+            "scenario_summary": "Residents mostly self-serve and delegate only when busy.",
+            "reasoning": "Low delegation and low conformity imply an autonomy-oriented setting.",
+            "delegation_preference_mean": 0.1,
+            "service_cost_factor": 0.5,
+            "social_conformity_pressure": 0.0,
+            "tasks_per_step_mean": 3.0,
+            "num_agents": 100,
+        },
+        raw_response='{"scenario_summary":"Residents mostly self-serve and delegate only when busy."}',
+    )
 
     state = llm_studio._normalize_llm_studio_state(store_data)
+    thread = llm_studio._build_scenario_thread(state["scenario"])
     panel = llm_studio._build_scenario_output(state["scenario"])
 
     assert llm_studio.restore_llm_studio_tab({"mounted": True}, store_data) == "tab-chat"
+    assert thread.className == "cp-chat"
     assert panel.className == "cp-card"
 
     header = panel.children[0]
     title_wrap = header.children[0]
-    assert title_wrap.children[0].children == "Parsed Parameters"
+    assert title_wrap.children[0].children == "Latest Parsed Scenario"
     assert title_wrap.children[1].children == "1.2s · qwen3.5:4b"
 
     body = panel.children[1]
-    assert body.children[0].children == (
+    assert body.children[1].children == (
         "Residents mostly self-serve and delegate only when busy."
     )
-    table = body.children[2]
+    table = body.children[4]
     first_row = table.children.children[0]
     assert first_row.children[0].children == "Delegation Preference Mean"
     assert first_row.children[1].children == "0.1"
+    assert "raw LLM JSON" in body.children[6].children[0].children
 
 
 def test_save_current_run_persists_active_preset(monkeypatch) -> None:

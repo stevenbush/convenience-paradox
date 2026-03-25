@@ -200,9 +200,9 @@ def simulation_controls() -> html.Div:
 
     return html.Div([
         preset_selector,
+        action_buttons,
+        status_display,
         primary_sliders,
         advanced_section,
         network_selector,
-        action_buttons,
-        status_display,
     ])

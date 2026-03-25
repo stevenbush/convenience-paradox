@@ -64,6 +64,9 @@ def _build_layout() -> html.Div:
             # LLM Studio UI state — persisted across page navigation in this browser tab.
             dcc.Store(id="llm-studio-store", data={}, storage_type="session"),
 
+            # Scenario Parser request queue — used to show a pending state before LLM returns.
+            dcc.Store(id="scenario-parse-request-store", data=None),
+
             # LLM chat history for the Result Interpreter (Role 3)
             dcc.Store(id="chat-history-store", data=[]),
 

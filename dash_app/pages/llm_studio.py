@@ -22,15 +22,16 @@ import json
 import logging
 import traceback
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import dash
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
-from dash import html, dcc, callback, Input, Output, State, ctx, no_update
+from dash import html, dcc, callback, clientside_callback, Input, Output, State, ctx, no_update
 
 from dash_app.components.card import card
-from dash_app.components.badges import status_badge
+from dash_app.components.badges import status_badge, llm_status_dot
 from dash_app.components.charts import CHART_COLORWAY
 import dash_app.state as app_state
 
@@ -65,14 +66,22 @@ def _default_llm_studio_state() -> dict[str, Any]:
     """Return the default browser-session state for the LLM Studio page."""
     return {
         "active_tab": "tab-scenario",
-        "scenario": {
-            "description": "",
-            "status": "idle",
-            "error": None,
-            "elapsed": None,
-            "model": None,
-            "result": None,
-        },
+        "scenario": _default_scenario_state(),
+    }
+
+
+def _default_scenario_state() -> dict[str, Any]:
+    """Return the initial Scenario Parser state."""
+    return {
+        "description": "",
+        "status": "idle",
+        "error": None,
+        "elapsed": None,
+        "model": None,
+        "result": None,
+        "raw_response": None,
+        "request_id": None,
+        "history": [],
     }
 
 
@@ -94,36 +103,322 @@ def _normalize_llm_studio_state(data: dict[str, Any] | None) -> dict[str, Any]:
         state["scenario"]["elapsed"] = scenario.get("elapsed")
         state["scenario"]["model"] = scenario.get("model")
         state["scenario"]["result"] = scenario.get("result")
+        state["scenario"]["raw_response"] = scenario.get("raw_response")
+        state["scenario"]["request_id"] = scenario.get("request_id")
+        history = scenario.get("history")
+        if isinstance(history, list):
+            state["scenario"]["history"] = [item for item in history if isinstance(item, dict)]
 
     return state
 
 
+def _scenario_placeholder(text: str):
+    """Return a centered placeholder used by the Scenario Parser views."""
+    return html.Div(
+        text,
+        style={
+            "color": "var(--cp-text-tertiary)",
+            "fontSize": "var(--cp-text-sm)",
+            "textAlign": "center",
+            "padding": "var(--cp-space-8)",
+        },
+    )
+
+
+def _make_request_id() -> str:
+    """Generate a stable request identifier for one Scenario Parser turn."""
+    return datetime.utcnow().strftime("%Y%m%dT%H%M%S%f")
+
+
+def _format_scenario_value(value: Any) -> str:
+    """Format one parsed parameter value for compact display."""
+    if value is None:
+        return "—"
+    if isinstance(value, float):
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def _format_raw_json(raw_response: Any) -> str:
+    """Pretty-format the raw LLM output for UI display."""
+    if raw_response is None:
+        return ""
+    if isinstance(raw_response, str):
+        try:
+            parsed = json.loads(raw_response)
+        except json.JSONDecodeError:
+            return raw_response
+    else:
+        parsed = raw_response
+    return json.dumps(parsed, indent=2, ensure_ascii=False)
+
+
+def _build_scenario_param_chips(result: dict[str, Any] | None):
+    """Render compact parameter chips for the assistant reply bubble."""
+    result = result or {}
+    chips = []
+    for param_key in SCENARIO_PARAM_KEYS:
+        chips.append(
+            html.Div(
+                [
+                    html.Div(
+                        param_key.replace("_", " ").title(),
+                        className="cp-scenario__metric-label",
+                    ),
+                    html.Div(
+                        _format_scenario_value(result.get(param_key)),
+                        className="cp-scenario__metric-value",
+                    ),
+                ],
+                className="cp-scenario__metric-chip",
+            )
+        )
+    return html.Div(chips, className="cp-scenario__metric-grid")
+
+
+def _build_scenario_raw_output(raw_response: Any, summary_text: str = "View raw LLM JSON"):
+    """Render a collapsible raw-response block when available."""
+    pretty = _format_raw_json(raw_response)
+    if not pretty:
+        return None
+    return html.Details(
+        [
+            html.Summary(summary_text, className="cp-scenario__details-summary"),
+            dcc.Markdown(
+                f"```json\n{pretty}\n```",
+                className="cp-scenario__raw-block",
+            ),
+        ],
+        className="cp-scenario__details",
+    )
+
+
+def _stage_scenario_request(
+    store_data: dict[str, Any] | None,
+    description: str,
+    model_name: str,
+    request_id: str,
+) -> dict[str, Any]:
+    """Append the user turn and a pending assistant turn before the LLM returns."""
+    state = _normalize_llm_studio_state(store_data)
+    scenario_state = state["scenario"]
+    scenario_state.update({
+        "description": description,
+        "status": "pending",
+        "error": None,
+        "elapsed": None,
+        "model": model_name,
+        "result": None,
+        "raw_response": None,
+        "request_id": request_id,
+    })
+    scenario_state["history"].append({
+        "id": f"{request_id}-user",
+        "role": "user",
+        "content": description,
+    })
+    scenario_state["history"].append({
+        "id": f"{request_id}-assistant",
+        "role": "assistant",
+        "request_id": request_id,
+        "status": "pending",
+        "model": model_name,
+        "content": "Reading your description and extracting structured simulation parameters.",
+    })
+    return state
+
+
+def _complete_scenario_request(
+    store_data: dict[str, Any] | None,
+    request_id: str,
+    model_name: str,
+    elapsed: float,
+    *,
+    result: dict[str, Any] | None = None,
+    raw_response: Any = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Replace the pending assistant turn with the final Scenario Parser reply."""
+    state = _normalize_llm_studio_state(store_data)
+    scenario_state = state["scenario"]
+    is_success = error is None and result is not None
+
+    for message in scenario_state["history"]:
+        if message.get("role") == "assistant" and message.get("request_id") == request_id:
+            message.update({
+                "status": "success" if is_success else "error",
+                "model": model_name,
+                "elapsed": elapsed,
+                "content": (
+                    (result or {}).get("scenario_summary", "Parsed scenario ready.")
+                    if is_success else error
+                ),
+                "reasoning": (result or {}).get("reasoning", "") if is_success else "",
+                "result": result if is_success else None,
+                "raw_response": raw_response,
+                "error": error,
+            })
+            break
+
+    if scenario_state.get("request_id") == request_id or scenario_state.get("status") != "pending":
+        scenario_state.update({
+            "status": "success" if is_success else "error",
+            "error": error,
+            "elapsed": elapsed,
+            "model": model_name,
+            "result": result if is_success else None,
+            "raw_response": raw_response,
+            "request_id": request_id,
+        })
+
+    return state
+
+
+def _build_scenario_thread(scenario_state: dict[str, Any] | None):
+    """Render the chat-style Scenario Parser transcript."""
+    scenario_state = scenario_state or {}
+    history = scenario_state.get("history") or []
+    if not history:
+        return _scenario_placeholder(
+            "Describe a society and the parser will translate it into explicit simulation parameters."
+        )
+
+    bubbles = []
+    for message in history:
+        if message.get("role") == "user":
+            bubbles.append(
+                html.Div([
+                    html.Div("You", className="cp-chat__sender"),
+                    html.Div(message.get("content", "")),
+                ], className="cp-chat__message cp-chat__message--user")
+            )
+            continue
+
+        meta = []
+        if message.get("model"):
+            meta.append(str(message.get("model")))
+        if isinstance(message.get("elapsed"), (int, float)):
+            meta.append(f"{message['elapsed']:.1f}s")
+
+        body_children = [
+            html.Div("Scenario Parser", className="cp-chat__sender"),
+            html.Div(
+                message.get("content", ""),
+                className="cp-scenario__reply-summary",
+            ),
+        ]
+
+        if message.get("status") == "pending":
+            body_children.extend([
+                html.Div(
+                    "Thinking through delegation, costs, conformity, workload, and population scale.",
+                    className="cp-scenario__reply-reasoning",
+                ),
+                html.Div(
+                    [
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                    ],
+                    className="cp-scenario__thinking",
+                ),
+            ])
+        elif message.get("status") == "error":
+            body_children.append(
+                html.Div(
+                    message.get("error", "Parser failed."),
+                    className="cp-scenario__reply-error",
+                )
+            )
+        else:
+            body_children.extend([
+                html.Div(
+                    message.get("reasoning", ""),
+                    className="cp-scenario__reply-reasoning",
+                ),
+                _build_scenario_param_chips(message.get("result")),
+            ])
+            raw_block = _build_scenario_raw_output(
+                message.get("raw_response"),
+                summary_text="View raw LLM output",
+            )
+            if raw_block is not None:
+                body_children.append(raw_block)
+
+        if meta:
+            body_children.append(
+                html.Div(" · ".join(meta), className="cp-scenario__message-meta")
+            )
+
+        bubbles.append(
+            html.Div(
+                body_children,
+                className="cp-chat__message cp-chat__message--ai cp-scenario__assistant-message",
+            )
+        )
+
+    return html.Div(bubbles, className="cp-chat")
+
+
 def _build_scenario_output(scenario_state: dict[str, Any] | None):
-    """Render the Scenario Parser result panel from session store data."""
+    """Render the latest structured Scenario Parser inspector."""
     scenario_state = scenario_state or {}
     status = scenario_state.get("status", "idle")
+    subtitle_parts = []
+    elapsed = scenario_state.get("elapsed")
+    if isinstance(elapsed, (int, float)):
+        subtitle_parts.append(f"{elapsed:.1f}s")
+    model_name = scenario_state.get("model")
+    if model_name:
+        subtitle_parts.append(str(model_name))
+    subtitle = " · ".join(subtitle_parts) if subtitle_parts else None
 
     if status == "idle":
-        return html.Div(
-            "Parsed parameters will appear here after you run the parser.",
-            style={
-                "color": "var(--cp-text-tertiary)",
-                "fontSize": "var(--cp-text-sm)",
-                "textAlign": "center",
-                "padding": "var(--cp-space-8)",
-            },
+        return card(
+            title="Latest Parsed Scenario",
+            subtitle="Structured inspector",
+            children=_scenario_placeholder(
+                "Submit a scenario to see the validated summary, parameter mapping, and raw LLM JSON."
+            ),
+        )
+
+    if status == "pending":
+        return card(
+            title="Parser Working",
+            subtitle=subtitle,
+            children=[
+                html.Div(
+                    scenario_state.get("description", ""),
+                    className="cp-scenario__pending-description",
+                ),
+                html.Div(
+                    "The request has been sent. Structured fields will appear here as soon as validation completes.",
+                    className="cp-scenario__reply-reasoning",
+                ),
+                html.Div(
+                    [
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                    ],
+                    className="cp-scenario__thinking",
+                ),
+            ],
         )
 
     if status in {"empty", "error"}:
-        return html.Div(
-            scenario_state.get("error") or "Unable to parse the scenario.",
-            style={"color": "var(--cp-danger)", "fontSize": "var(--cp-text-sm)"},
+        return card(
+            title="Parser Error",
+            subtitle=subtitle,
+            children=html.Div(
+                scenario_state.get("error") or "Unable to parse the scenario.",
+                className="cp-scenario__reply-error",
+            ),
         )
 
     result = scenario_state.get("result") or {}
     params_rows = []
     for param_key in SCENARIO_PARAM_KEYS:
-        value = result.get(param_key)
         params_rows.append(
             html.Tr([
                 html.Td(
@@ -131,7 +426,7 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
                     style={"fontSize": "var(--cp-text-sm)"},
                 ),
                 html.Td(
-                    f"{value}" if value is not None else "—",
+                    _format_scenario_value(result.get(param_key)),
                     style={
                         "fontFamily": "var(--cp-font-mono)",
                         "fontSize": "var(--cp-text-sm)",
@@ -140,39 +435,35 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
             ])
         )
 
-    subtitle_parts = []
-    elapsed = scenario_state.get("elapsed")
-    if isinstance(elapsed, (int, float)):
-        subtitle_parts.append(f"{elapsed:.1f}s")
-    model_name = scenario_state.get("model")
-    if model_name:
-        subtitle_parts.append(str(model_name))
+    children = [
+        html.Div("Parsed Feedback", className="cp-scenario__section-label"),
+        html.P(
+            result.get("scenario_summary", ""),
+            className="cp-scenario__reply-summary",
+        ),
+        html.P(
+            result.get("reasoning", ""),
+            className="cp-scenario__reply-reasoning",
+        ),
+        html.Div("Model Parameters", className="cp-scenario__section-label"),
+        dbc.Table(
+            html.Tbody(params_rows),
+            bordered=True,
+            size="sm",
+            className="mt-2",
+        ),
+    ]
+    raw_block = _build_scenario_raw_output(scenario_state.get("raw_response"))
+    if raw_block is not None:
+        children.extend([
+            html.Div("Raw LLM Output", className="cp-scenario__section-label"),
+            raw_block,
+        ])
 
     return card(
-        title="Parsed Parameters",
-        subtitle=" · ".join(subtitle_parts) if subtitle_parts else None,
-        children=[
-            html.P(
-                result.get("scenario_summary", ""),
-                style={
-                    "fontWeight": "var(--cp-weight-semibold)",
-                    "fontSize": "var(--cp-text-sm)",
-                },
-            ),
-            html.P(
-                result.get("reasoning", ""),
-                style={
-                    "fontSize": "var(--cp-text-sm)",
-                    "color": "var(--cp-text-secondary)",
-                },
-            ),
-            dbc.Table(
-                html.Tbody(params_rows),
-                bordered=True,
-                size="sm",
-                className="mt-2",
-            ),
-        ],
+        title="Latest Parsed Scenario",
+        subtitle=subtitle,
+        children=children,
     )
 
 
@@ -231,23 +522,85 @@ def _model_config_panel() -> html.Div:
 
     return html.Div([
         html.Div([
-            html.I(className="fas fa-cog me-2"),
-            html.Span("Model Configuration",
-                       style={"fontWeight": "var(--cp-weight-semibold)"}),
+            html.Div([
+                html.I(className="fas fa-cog me-2"),
+                html.Span("Model Configuration",
+                          style={"fontWeight": "var(--cp-weight-semibold)"}),
+            ], className="d-flex align-items-center"),
+            html.Div(id="model-config-summary", className="cp-model-summary"),
             dbc.Button(
                 html.I(className="fas fa-chevron-down"),
                 id="btn-toggle-model-config",
                 className="cp-btn-outline ms-auto",
                 size="sm", n_clicks=0,
             ),
-        ], className="d-flex align-items-center mb-3",
+        ], className="d-flex align-items-center gap-3 mb-3",
            style={"cursor": "pointer"}),
         dbc.Collapse(
             card(children=rows),
             id="model-config-collapse",
-            is_open=True,
+            is_open=False,
         ),
     ])
+
+
+def _short_model_label(model_name: str | None, max_len: int = 18) -> str:
+    """Return a compact model label suitable for the summary chips."""
+    if not model_name:
+        return "Unassigned"
+    if len(model_name) <= max_len:
+        return model_name
+    return f"{model_name[:max_len - 1]}…"
+
+
+def _model_status_from_class(class_name: str | None) -> str:
+    """Map a status-dot className to its logical status."""
+    if "cp-status-dot--online" in (class_name or ""):
+        return "online"
+    if "cp-status-dot--offline" in (class_name or ""):
+        return "offline"
+    return "unknown"
+
+
+def _build_model_config_summary(
+    role_values: dict[str, str] | None,
+    role_statuses: dict[str, str] | None,
+):
+    """Build a compact status summary visible even when the config panel is collapsed."""
+    role_values = role_values or {}
+    role_statuses = role_statuses or {}
+
+    if not role_values and not role_statuses:
+        return status_badge("Detecting models...", "info")
+
+    chips = []
+    online_count = 0
+    known_count = 0
+
+    for role_key, role_id, _, _ in ROLES:
+        status = _model_status_from_class(role_statuses.get(role_key))
+        model_name = role_values.get(role_key, "")
+        if status != "unknown" or model_name:
+            known_count += 1
+        if status == "online":
+            online_count += 1
+
+        chips.append(
+            html.Div(
+                [
+                    llm_status_dot(status == "online" if status != "unknown" else None),
+                    html.Span(role_id.replace("Role ", "R"), className="cp-model-summary__role"),
+                    html.Span(_short_model_label(model_name), className="cp-model-summary__model"),
+                ],
+                className="cp-model-summary__chip",
+            )
+        )
+
+    if known_count == 0:
+        return status_badge("Detecting models...", "info")
+    if online_count == 0:
+        return status_badge("No local LLM model available", "neutral")
+    return html.Div(chips, className="cp-model-summary__list")
 
 
 def _tab_scenario() -> html.Div:
@@ -255,31 +608,52 @@ def _tab_scenario() -> html.Div:
     return html.Div([
         dbc.Row([
             dbc.Col([
-                dbc.Textarea(
-                    id="scenario-input",
-                    placeholder="Describe a social scenario (e.g., 'A society where everyone uses delivery apps and nobody cooks')...",
-                    style={"height": "100px", "fontSize": "var(--cp-text-sm)"},
-                    maxLength=500,
-                    persistence=True,
-                    persistence_type="session",
+                card(
+                    title="Scenario Conversation",
+                    subtitle="Send a free-text description, watch the parser think, then inspect the validated output.",
+                    children=[
+                        html.Div(id="scenario-thread", className="cp-scenario-thread"),
+                        html.Div(
+                            [
+                                dbc.Textarea(
+                                    id="scenario-input",
+                                    placeholder="Describe a social scenario (e.g., 'A society where everyone uses delivery apps and nobody cooks')...",
+                                    style={"fontSize": "var(--cp-text-sm)"},
+                                    className="cp-scenario__input",
+                                    maxLength=500,
+                                    persistence=True,
+                                    persistence_type="session",
+                                ),
+                                html.Div(
+                                    [
+                                        dbc.Button(
+                                            [html.I(className="fas fa-wand-magic-sparkles me-1"), "Parse Scenario"],
+                                            id="btn-parse-scenario",
+                                            className="cp-btn-primary",
+                                            size="sm",
+                                        ),
+                                        dbc.Button(
+                                            [html.I(className="fas fa-trash-alt me-1"), "Clear Conversation"],
+                                            id="btn-clear-scenario",
+                                            className="cp-btn-outline",
+                                            size="sm",
+                                        ),
+                                    ],
+                                    className="cp-scenario__composer-actions",
+                                ),
+                                html.Div(
+                                    "The message is sent immediately; the parser reply appears as soon as validation finishes.",
+                                    className="cp-scenario__composer-note",
+                                ),
+                            ],
+                            className="cp-scenario-composer",
+                        ),
+                    ],
                 ),
-                html.Div([
-                    dbc.Button(
-                        [html.I(className="fas fa-wand-magic-sparkles me-1"), "Parse Scenario"],
-                        id="btn-parse-scenario",
-                        className="cp-btn-primary mt-2",
-                        size="sm",
-                    ),
-                    dbc.Spinner(
-                        html.Span(id="scenario-spinner"),
-                        size="sm", color="primary",
-                        spinner_class_name="ms-2",
-                    ),
-                ], className="d-flex align-items-center"),
-            ], md=6),
+            ], md=7),
             dbc.Col(
                 html.Div(id="scenario-output"),
-                md=6,
+                md=5,
             ),
         ]),
     ], className="p-3")
@@ -462,6 +836,7 @@ def _tab_content() -> dbc.Tabs:
 
 layout = html.Div([
     dcc.Store(id="llm-studio-page-store", data={"mounted": True}),
+    dcc.Store(id="scenario-thread-scroll-store", data=0),
     html.Div([
         html.H2("LLM Studio", className="cp-page-title"),
         html.P(
@@ -518,10 +893,10 @@ def toggle_model_config(n_clicks, is_open):
     [Output(f"{rk}-model", "options") for rk, _, _, _ in ROLES]
     + [Output(f"{rk}-model", "value") for rk, _, _, _ in ROLES]
     + [Output(f"{rk}-model-status", "className") for rk, _, _, _ in ROLES],
+    Input("llm-studio-page-store", "data"),
     Input("btn-refresh-models", "n_clicks"),
-    prevent_initial_call=True,
 )
-def refresh_models(n_clicks):
+def refresh_models(page_state, n_clicks):
     """Query Ollama for available models and populate all role dropdowns."""
     try:
         import ollama as _ollama
@@ -554,7 +929,32 @@ def refresh_models(n_clicks):
 
 
 # =========================================================================
-# Callback 3: Save model selections to state
+# Callback 3: Model summary for collapsed header
+# =========================================================================
+
+@callback(
+    Output("model-config-summary", "children"),
+    [Input(f"{rk}-model", "value") for rk, _, _, _ in ROLES]
+    + [Input(f"{rk}-model-status", "className") for rk, _, _, _ in ROLES],
+)
+def update_model_config_summary(*args):
+    """Show current role-model assignments even when the panel is collapsed."""
+    split = len(ROLES)
+    values = args[:split]
+    statuses = args[split:]
+    role_values = {
+        role_key: value or ""
+        for (role_key, _, _, _), value in zip(ROLES, values, strict=False)
+    }
+    role_statuses = {
+        role_key: status or ""
+        for (role_key, _, _, _), status in zip(ROLES, statuses, strict=False)
+    }
+    return _build_model_config_summary(role_values, role_statuses)
+
+
+# =========================================================================
+# Callback 4: Save model selections to state
 # =========================================================================
 
 for _rk, _, _, _ in ROLES:
@@ -571,7 +971,7 @@ for _rk, _, _, _ in ROLES:
 
 
 # =========================================================================
-# Callback 4: Restore LLM Studio tab on page remount
+# Callback 5: Restore LLM Studio tab on page remount
 # =========================================================================
 
 @callback(
@@ -586,86 +986,210 @@ def restore_llm_studio_tab(page_state, store_data):
 
 
 # =========================================================================
-# Callback 5: Persist LLM Studio page state
+# Callback 6: Persist active LLM Studio tab
 # =========================================================================
 
 @callback(
     Output("llm-studio-store", "data"),
-    Input("btn-parse-scenario", "n_clicks"),
     Input("llm-tabs", "active_tab"),
+    State("llm-studio-store", "data"),
+    prevent_initial_call=True,
+)
+def persist_llm_studio_tab(active_tab, store_data):
+    """Persist the current LLM Studio tab in session storage."""
+    state = _normalize_llm_studio_state(store_data)
+    state["active_tab"] = active_tab or state["active_tab"]
+    return state
+
+
+# =========================================================================
+# Callback 7: Clear Scenario Parser conversation
+# =========================================================================
+
+@callback(
+    Output("llm-studio-store", "data", allow_duplicate=True),
+    Output("scenario-input", "value", allow_duplicate=True),
+    Input("btn-clear-scenario", "n_clicks"),
+    State("llm-studio-store", "data"),
+    prevent_initial_call=True,
+)
+def clear_scenario_conversation(n_clicks, store_data):
+    """Reset Scenario Parser history and inspector so the user can start over."""
+    state = _normalize_llm_studio_state(store_data)
+    state["scenario"] = _default_scenario_state()
+    return state, ""
+
+
+# =========================================================================
+# Callback 8: Stage Scenario Parser request immediately
+# =========================================================================
+
+@callback(
+    Output("llm-studio-store", "data", allow_duplicate=True),
+    Output("scenario-parse-request-store", "data"),
+    Output("scenario-input", "value"),
+    Input("btn-parse-scenario", "n_clicks"),
     State("scenario-input", "value"),
     State("llm-studio-store", "data"),
     prevent_initial_call=True,
 )
-def update_llm_studio_store(n_clicks, active_tab, description, store_data):
-    """Persist tab selection and Scenario Parser results in session storage."""
-    state = _normalize_llm_studio_state(store_data)
-    state["active_tab"] = active_tab or state["active_tab"]
-
-    if ctx.triggered_id == "llm-tabs":
-        return state
-
+def stage_scenario_request(n_clicks, description, store_data):
+    """Append the user message and a pending assistant bubble before parsing starts."""
     if not description or not description.strip():
-        state["scenario"] = {
-            "description": description or "",
+        state = _normalize_llm_studio_state(store_data)
+        state["scenario"].update({
             "status": "empty",
             "error": "Please enter a scenario description.",
             "elapsed": None,
             "model": None,
             "result": None,
-        }
-        return state
+            "raw_response": None,
+        })
+        return state, no_update, no_update
 
-    import time
     model_name = app_state.get_role_model("role_1")
-    t0 = time.perf_counter()
-    try:
-        from api.llm_service import parse_scenario
-        result = parse_scenario(description, model=model_name)
-        elapsed = time.perf_counter() - t0
-        _record_audit("Role 1", "scenario_parser", model_name,
-                      description, result, elapsed)
-        state["scenario"] = {
-            "description": description,
-            "status": "success",
-            "error": None,
-            "elapsed": elapsed,
-            "model": model_name,
-            "result": result,
-        }
-        return state
-    except Exception as e:
-        elapsed = time.perf_counter() - t0
-        _record_audit("Role 1", "scenario_parser", model_name,
-                      description, None, elapsed, str(e))
-        state["scenario"] = {
-            "description": description,
-            "status": "error",
-            "error": f"Error: {e}",
-            "elapsed": elapsed,
-            "model": model_name,
-            "result": None,
-        }
-        return state
+    request_id = _make_request_id()
+    next_state = _stage_scenario_request(store_data, description.strip(), model_name, request_id)
+    request = {
+        "request_id": request_id,
+        "description": description.strip(),
+        "model": model_name,
+    }
+    return next_state, request, ""
 
 
 # =========================================================================
-# Callback 6: Rehydrate Scenario Parser output on page remount
+# Callback 9: Resolve Scenario Parser request
 # =========================================================================
 
 @callback(
+    Output("llm-studio-store", "data", allow_duplicate=True),
+    Input("scenario-parse-request-store", "data"),
+    State("llm-studio-store", "data"),
+    prevent_initial_call=True,
+    running=[
+        (Output("btn-parse-scenario", "disabled"), True, False),
+        (Output("btn-clear-scenario", "disabled"), True, False),
+        (Output("scenario-input", "disabled"), True, False),
+    ],
+)
+def resolve_scenario_request(request, store_data):
+    """Perform the parse and replace the pending bubble with the final reply."""
+    if not request:
+        return no_update
+
+    import time
+    from api.llm_audit import LlmAuditRecorder
+    from api.llm_service import parse_scenario
+
+    request_id = request.get("request_id", _make_request_id())
+    description = str(request.get("description") or "")
+    model_name = str(request.get("model") or app_state.get_role_model("role_1"))
+    t0 = time.perf_counter()
+    recorder = LlmAuditRecorder(
+        run_id=request_id,
+        output_dir=Path("data/results/llm_logs"),
+    )
+
+    try:
+        result = parse_scenario(description, model=model_name, recorder=recorder)
+        elapsed = time.perf_counter() - t0
+        role_calls = recorder.get_calls("role_1")
+        raw_response = role_calls[-1].get("raw_response") if role_calls else None
+        _record_audit("Role 1", "scenario_parser", model_name,
+                      description, result, elapsed)
+        recorder.write_role_artifact(
+            role="role_1",
+            filename=f"{request_id}_scenario_parser_ui.json",
+            payload={
+                "source": "dash_llm_studio",
+                "description": description,
+                "result": result,
+            },
+        )
+        return _complete_scenario_request(
+            store_data,
+            request_id,
+            model_name,
+            elapsed,
+            result=result,
+            raw_response=raw_response,
+        )
+    except Exception as e:
+        elapsed = time.perf_counter() - t0
+        role_calls = recorder.get_calls("role_1")
+        raw_response = role_calls[-1].get("raw_response") if role_calls else None
+        _record_audit("Role 1", "scenario_parser", model_name,
+                      description, None, elapsed, str(e))
+        try:
+            recorder.write_role_artifact(
+                role="role_1",
+                filename=f"{request_id}_scenario_parser_ui.json",
+                payload={
+                    "source": "dash_llm_studio",
+                    "description": description,
+                    "error": str(e),
+                },
+            )
+        except Exception:
+            logger.exception("Failed to persist Scenario Parser UI audit artifact.")
+        return _complete_scenario_request(
+            store_data,
+            request_id,
+            model_name,
+            elapsed,
+            raw_response=raw_response,
+            error=f"Error: {e}",
+        )
+
+
+# =========================================================================
+# Callback 10: Rehydrate Scenario Parser views on page remount
+# =========================================================================
+
+@callback(
+    Output("scenario-thread", "children"),
     Output("scenario-output", "children"),
     Input("llm-studio-store", "data"),
     Input("llm-studio-page-store", "data"),
 )
-def render_scenario_output(store_data, page_state):
-    """Render the latest Scenario Parser result after navigation back to the page."""
+def render_scenario_views(store_data, page_state):
+    """Render the transcript and the structured inspector from session state."""
     state = _normalize_llm_studio_state(store_data)
-    return _build_scenario_output(state["scenario"])
+    return _build_scenario_thread(state["scenario"]), _build_scenario_output(state["scenario"])
 
 
 # =========================================================================
-# Callback 7: Chat Interpreter (Role 3)
+# Callback 11: Auto-scroll Scenario Parser transcript
+# =========================================================================
+
+clientside_callback(
+    """
+    function(children, pageState) {
+        const container = document.getElementById("scenario-thread");
+        if (!container) {
+            return window.dash_clientside.no_update;
+        }
+
+        window.requestAnimationFrame(() => {
+            container.scrollTo({
+                top: container.scrollHeight,
+                behavior: "smooth",
+            });
+        });
+
+        return Date.now();
+    }
+    """,
+    Output("scenario-thread-scroll-store", "data"),
+    Input("scenario-thread", "children"),
+    Input("llm-studio-page-store", "data"),
+    prevent_initial_call=True,
+)
+
+
+# =========================================================================
+# Callback 12: Chat Interpreter (Role 3)
 # =========================================================================
 
 @callback(
