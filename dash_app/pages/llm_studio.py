@@ -180,7 +180,7 @@ PROFILE_NEXT_STEP_GUIDANCE = (
 
 
 def _default_llm_studio_state() -> dict[str, Any]:
-    """Return the default browser-session state for the LLM Studio page."""
+    """Return the default in-memory UI state for the LLM Studio page."""
     return {
         "active_tab": "tab-scenario",
         "scenario": _default_scenario_state(),
@@ -199,6 +199,9 @@ def _default_scenario_state() -> dict[str, Any]:
         "raw_response": None,
         "request_id": None,
         "history": [],
+        "last_parse_clicks": 0,
+        "last_submit_count": 0,
+        "last_clear_clicks": 0,
     }
 
 
@@ -222,6 +225,9 @@ def _normalize_llm_studio_state(data: dict[str, Any] | None) -> dict[str, Any]:
         state["scenario"]["result"] = scenario.get("result")
         state["scenario"]["raw_response"] = scenario.get("raw_response")
         state["scenario"]["request_id"] = scenario.get("request_id")
+        state["scenario"]["last_parse_clicks"] = int(scenario.get("last_parse_clicks") or 0)
+        state["scenario"]["last_submit_count"] = int(scenario.get("last_submit_count") or 0)
+        state["scenario"]["last_clear_clicks"] = int(scenario.get("last_clear_clicks") or 0)
         history = scenario.get("history")
         if isinstance(history, list):
             state["scenario"]["history"] = [item for item in history if isinstance(item, dict)]
@@ -244,7 +250,7 @@ def _scenario_placeholder(text: str):
 
 def _make_request_id() -> str:
     """Generate a stable request identifier for one Scenario Parser turn."""
-    return datetime.utcnow().strftime("%Y%m%dT%H%M%S%f")
+    return datetime.now().strftime("%Y%m%dT%H%M%S%f")
 
 
 def _format_scenario_value(value: Any) -> str:
@@ -701,6 +707,9 @@ def _default_chat_state() -> dict[str, Any]:
         "history": [],
         "context": None,
         "raw_response": None,
+        "last_send_clicks": 0,
+        "last_submit_count": 0,
+        "last_clear_clicks": 0,
     }
 
 
@@ -724,6 +733,9 @@ def _normalize_chat_state(data: dict[str, Any] | list[Any] | None) -> dict[str, 
     state["model"] = data.get("model")
     state["request_id"] = data.get("request_id")
     state["raw_response"] = data.get("raw_response")
+    state["last_send_clicks"] = int(data.get("last_send_clicks") or 0)
+    state["last_submit_count"] = int(data.get("last_submit_count") or 0)
+    state["last_clear_clicks"] = int(data.get("last_clear_clicks") or 0)
     history = data.get("history")
     if isinstance(history, list):
         state["history"] = [item for item in history if isinstance(item, dict)]
@@ -746,6 +758,9 @@ def _default_profile_state() -> dict[str, Any]:
         "result": None,
         "raw_response": None,
         "history": [],
+        "last_generate_clicks": 0,
+        "last_submit_count": 0,
+        "last_clear_clicks": 0,
     }
 
 
@@ -763,6 +778,9 @@ def _normalize_profile_state(data: dict[str, Any] | None) -> dict[str, Any]:
     state["description"] = str(data.get("description") or "")
     state["result"] = data.get("result") if isinstance(data.get("result"), dict) else None
     state["raw_response"] = data.get("raw_response")
+    state["last_generate_clicks"] = int(data.get("last_generate_clicks") or 0)
+    state["last_submit_count"] = int(data.get("last_submit_count") or 0)
+    state["last_clear_clicks"] = int(data.get("last_clear_clicks") or 0)
     history = data.get("history")
     if isinstance(history, list):
         state["history"] = [item for item in history if isinstance(item, dict)]
@@ -1406,6 +1424,93 @@ def _complete_profile_request(
     return state
 
 
+def _default_annotation_state() -> dict[str, Any]:
+    """Return the initial Visualization Annotator state."""
+    return {
+        "status": "idle",
+        "error": None,
+        "items": [],
+        "generated_at": None,
+        "last_annotate_clicks": 0,
+        "last_clear_clicks": 0,
+    }
+
+
+def _normalize_annotation_state(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Merge arbitrary store payloads with the expected annotation schema."""
+    state = _default_annotation_state()
+    if not isinstance(data, dict):
+        return state
+
+    state["status"] = str(data.get("status") or "idle")
+    state["error"] = data.get("error")
+    state["generated_at"] = data.get("generated_at")
+    state["last_annotate_clicks"] = int(data.get("last_annotate_clicks") or 0)
+    state["last_clear_clicks"] = int(data.get("last_clear_clicks") or 0)
+    items = data.get("items")
+    if isinstance(items, list):
+        state["items"] = [item for item in items if isinstance(item, dict)]
+
+    return state
+
+
+def _build_annotations_output(annotation_state: dict[str, Any] | None):
+    """Render persisted annotation cards for the Annotations tab."""
+    state = _normalize_annotation_state(annotation_state)
+    status = state.get("status", "idle")
+
+    if status == "idle":
+        return _scenario_placeholder(
+            "Annotate the current dashboard charts to generate compact captions and key insights."
+        )
+
+    if status == "error":
+        return html.Div(
+            state.get("error") or "Unable to annotate the current charts.",
+            style={"color": "var(--cp-danger)", "fontSize": "var(--cp-text-sm)"},
+        )
+
+    cards = []
+    for item in state.get("items", []):
+        if item.get("error"):
+            cards.append(card(
+                title=str(item.get("chart_label") or "Chart"),
+                children=html.Div(
+                    str(item.get("error")),
+                    style={"color": "var(--cp-danger)", "fontSize": "var(--cp-text-sm)"},
+                ),
+            ))
+            continue
+
+        cards.append(card(
+            title=str(item.get("chart_title") or item.get("chart_label") or "Chart"),
+            subtitle=str(item.get("hypothesis_tag") or ""),
+            children=[
+                html.P(
+                    str(item.get("caption") or ""),
+                    style={"fontSize": "var(--cp-text-sm)"},
+                ),
+                html.Div(
+                    [
+                        html.I(className="fas fa-lightbulb me-1"),
+                        str(item.get("key_insight") or ""),
+                    ],
+                    style={
+                        "fontSize": "var(--cp-text-sm)",
+                        "color": "var(--cp-primary)",
+                        "fontWeight": "var(--cp-weight-semibold)",
+                    },
+                ),
+            ],
+            footer=html.Span(
+                f"{float(item.get('elapsed', 0.0)):.1f}s · {item.get('model') or 'LLM'}",
+                style={"fontSize": "var(--cp-text-xs)", "color": "var(--cp-text-tertiary)"},
+            ),
+        ))
+
+    return html.Div(cards)
+
+
 def _build_chat_thread(chat_state: dict[str, Any] | None):
     """Render the chat-style Result Interpreter transcript."""
     chat_state = chat_state or {}
@@ -1740,7 +1845,7 @@ def _tab_scenario() -> html.Div:
                                     submit_on_enter=True,
                                     maxLength=500,
                                     persistence=True,
-                                    persistence_type="session",
+                                    persistence_type="memory",
                                 ),
                                 html.Div(
                                     [
@@ -1800,7 +1905,7 @@ def _tab_chat() -> html.Div:
                                     n_submit=0,
                                     submit_on_enter=True,
                                     persistence=True,
-                                    persistence_type="session",
+                                    persistence_type="memory",
                                 ),
                                 html.Div(
                                     [
@@ -1865,7 +1970,7 @@ def _tab_profile() -> html.Div:
                                     submit_on_enter=True,
                                     maxLength=500,
                                     persistence=True,
-                                    persistence_type="session",
+                                    persistence_type="memory",
                                 ),
                                 html.Div(
                                     [
@@ -1913,12 +2018,13 @@ def _tab_annotations() -> html.Div:
                 className="cp-btn-primary",
                 size="sm",
             ),
-            dbc.Spinner(
-                html.Span(id="annotate-spinner"),
-                size="sm", color="primary",
-                spinner_class_name="ms-2",
+            dbc.Button(
+                [html.I(className="fas fa-trash-alt me-1"), "Clear Annotations"],
+                id="btn-clear-annotations",
+                className="cp-btn-outline",
+                size="sm",
             ),
-        ], className="d-flex align-items-center mb-3"),
+        ], className="d-flex align-items-center gap-2 flex-wrap mb-3"),
         html.Div(id="annotations-output"),
     ], className="p-3")
 
@@ -2004,22 +2110,24 @@ def _tab_content() -> dbc.Tabs:
     ], id="llm-tabs", active_tab="tab-scenario", className="cp-tabs")
 
 
-layout = html.Div([
-    dcc.Store(id="llm-studio-page-store", data={"mounted": True}),
-    dcc.Store(id="scenario-thread-scroll-store", data=0),
-    dcc.Store(id="chat-thread-scroll-store", data=0),
-    dcc.Store(id="profile-thread-scroll-store", data=0),
-    html.Div([
-        html.H2("LLM Studio", className="cp-page-title"),
-        html.P(
-            "AI-powered research assistant — 5 peripheral LLM roles for analysis and interpretation.",
-            className="cp-page-subtitle",
-        ),
-    ], className="cp-page-header"),
-    _model_config_panel(),
-    html.Div(className="mb-4"),
-    _tab_content(),
-])
+def layout() -> html.Div:
+    """Build the LLM Studio page with a guaranteed remount trigger."""
+    return html.Div([
+        dcc.Interval(id="llm-studio-mount-interval", interval=50, n_intervals=0, max_intervals=1),
+        dcc.Store(id="scenario-thread-scroll-store", data=0),
+        dcc.Store(id="chat-thread-scroll-store", data=0),
+        dcc.Store(id="profile-thread-scroll-store", data=0),
+        html.Div([
+            html.H2("LLM Studio", className="cp-page-title"),
+            html.P(
+                "AI-powered research assistant — 5 peripheral LLM roles for analysis and interpretation.",
+                className="cp-page-subtitle",
+            ),
+        ], className="cp-page-header"),
+        _model_config_panel(),
+        html.Div(className="mb-4"),
+        _tab_content(),
+    ])
 
 
 # =========================================================================
@@ -2065,7 +2173,7 @@ def toggle_model_config(n_clicks, is_open):
     [Output(f"{rk}-model", "options") for rk, _, _, _ in ROLES]
     + [Output(f"{rk}-model", "value") for rk, _, _, _ in ROLES]
     + [Output(f"{rk}-model-status", "className") for rk, _, _, _ in ROLES],
-    Input("llm-studio-page-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
     Input("btn-refresh-models", "n_clicks"),
 )
 def refresh_models(page_state, n_clicks):
@@ -2148,7 +2256,7 @@ for _rk, _, _, _ in ROLES:
 
 @callback(
     Output("llm-tabs", "active_tab"),
-    Input("llm-studio-page-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
     State("llm-studio-store", "data"),
 )
 def restore_llm_studio_tab(page_state, store_data):
@@ -2168,7 +2276,7 @@ def restore_llm_studio_tab(page_state, store_data):
     prevent_initial_call=True,
 )
 def persist_llm_studio_tab(active_tab, store_data):
-    """Persist the current LLM Studio tab in session storage."""
+    """Persist the current LLM Studio tab in the in-memory page store."""
     state = _normalize_llm_studio_state(store_data)
     state["active_tab"] = active_tab or state["active_tab"]
     return state
@@ -2188,7 +2296,15 @@ def persist_llm_studio_tab(active_tab, store_data):
 def clear_scenario_conversation(n_clicks, store_data):
     """Reset Scenario Parser history and inspector so the user can start over."""
     state = _normalize_llm_studio_state(store_data)
-    state["scenario"] = _default_scenario_state()
+    current_clicks = int(n_clicks or 0)
+    if current_clicks <= state["scenario"].get("last_clear_clicks", 0):
+        return no_update, no_update
+
+    reset_state = _default_scenario_state()
+    reset_state["last_parse_clicks"] = state["scenario"].get("last_parse_clicks", 0)
+    reset_state["last_submit_count"] = state["scenario"].get("last_submit_count", 0)
+    reset_state["last_clear_clicks"] = current_clicks
+    state["scenario"] = reset_state
     return state, ""
 
 
@@ -2210,8 +2326,21 @@ def stage_scenario_request(n_clicks, n_submit, description, store_data):
     """Append the user message and a pending assistant bubble before parsing starts."""
     if ctx.triggered_id not in {"btn-parse-scenario", "scenario-input"}:
         return no_update, no_update, no_update
+    state = _normalize_llm_studio_state(store_data)
+    scenario_state = state["scenario"]
+
+    if ctx.triggered_id == "btn-parse-scenario":
+        current_clicks = int(n_clicks or 0)
+        if current_clicks <= scenario_state.get("last_parse_clicks", 0):
+            return no_update, no_update, no_update
+        scenario_state["last_parse_clicks"] = current_clicks
+    else:
+        current_submit = int(n_submit or 0)
+        if current_submit <= scenario_state.get("last_submit_count", 0):
+            return no_update, no_update, no_update
+        scenario_state["last_submit_count"] = current_submit
+
     if not description or not description.strip():
-        state = _normalize_llm_studio_state(store_data)
         state["scenario"].update({
             "status": "empty",
             "error": "Please enter a scenario description.",
@@ -2224,7 +2353,7 @@ def stage_scenario_request(n_clicks, n_submit, description, store_data):
 
     model_name = app_state.get_role_model("role_1")
     request_id = _make_request_id()
-    next_state = _stage_scenario_request(store_data, description.strip(), model_name, request_id)
+    next_state = _stage_scenario_request(state, description.strip(), model_name, request_id)
     request = {
         "request_id": request_id,
         "description": description.strip(),
@@ -2239,6 +2368,7 @@ def stage_scenario_request(n_clicks, n_submit, description, store_data):
 
 @callback(
     Output("llm-studio-store", "data", allow_duplicate=True),
+    Output("scenario-parse-request-store", "data", allow_duplicate=True),
     Input("scenario-parse-request-store", "data"),
     State("llm-studio-store", "data"),
     prevent_initial_call=True,
@@ -2251,7 +2381,7 @@ def stage_scenario_request(n_clicks, n_submit, description, store_data):
 def resolve_scenario_request(request, store_data):
     """Perform the parse and replace the pending bubble with the final reply."""
     if not request:
-        return no_update
+        return no_update, no_update
 
     import time
     from api.llm_audit import LlmAuditRecorder
@@ -2289,7 +2419,7 @@ def resolve_scenario_request(request, store_data):
             elapsed,
             result=result,
             raw_response=raw_response,
-        )
+        ), None
     except Exception as e:
         elapsed = time.perf_counter() - t0
         role_calls = recorder.get_calls("role_1")
@@ -2315,7 +2445,7 @@ def resolve_scenario_request(request, store_data):
             elapsed,
             raw_response=raw_response,
             error=f"Error: {e}",
-        )
+        ), None
 
 
 # =========================================================================
@@ -2326,10 +2456,10 @@ def resolve_scenario_request(request, store_data):
     Output("scenario-thread", "children"),
     Output("scenario-output", "children"),
     Input("llm-studio-store", "data"),
-    Input("llm-studio-page-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
 )
 def render_scenario_views(store_data, page_state):
-    """Render the transcript and the structured inspector from session state."""
+    """Render the transcript and structured inspector from in-memory UI state."""
     state = _normalize_llm_studio_state(store_data)
     return _build_scenario_thread(state["scenario"]), _build_scenario_output(state["scenario"])
 
@@ -2358,7 +2488,7 @@ clientside_callback(
     """,
     Output("scenario-thread-scroll-store", "data"),
     Input("scenario-thread", "children"),
-    Input("llm-studio-page-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
     prevent_initial_call=True,
 )
 
@@ -2371,11 +2501,21 @@ clientside_callback(
     Output("chat-history-store", "data", allow_duplicate=True),
     Output("chat-input", "value", allow_duplicate=True),
     Input("btn-clear-chat", "n_clicks"),
+    State("chat-history-store", "data"),
     prevent_initial_call=True,
 )
-def clear_chat_conversation(n_clicks):
+def clear_chat_conversation(n_clicks, chat_data):
     """Reset the Result Interpreter transcript so the user can start over."""
-    return _default_chat_state(), ""
+    state = _normalize_chat_state(chat_data)
+    current_clicks = int(n_clicks or 0)
+    if current_clicks <= state.get("last_clear_clicks", 0):
+        return no_update, no_update
+
+    reset_state = _default_chat_state()
+    reset_state["last_send_clicks"] = state.get("last_send_clicks", 0)
+    reset_state["last_submit_count"] = state.get("last_submit_count", 0)
+    reset_state["last_clear_clicks"] = current_clicks
+    return reset_state, ""
 
 
 # =========================================================================
@@ -2396,12 +2536,24 @@ def stage_chat_request(n_clicks, n_submit, question, chat_data):
     """Append the user message and a pending assistant bubble before interpretation starts."""
     if ctx.triggered_id not in {"btn-chat-send", "chat-input"}:
         return no_update, no_update, no_update
+    state = _normalize_chat_state(chat_data)
+
+    if ctx.triggered_id == "btn-chat-send":
+        current_clicks = int(n_clicks or 0)
+        if current_clicks <= state.get("last_send_clicks", 0):
+            return no_update, no_update, no_update
+        state["last_send_clicks"] = current_clicks
+    else:
+        current_submit = int(n_submit or 0)
+        if current_submit <= state.get("last_submit_count", 0):
+            return no_update, no_update, no_update
+        state["last_submit_count"] = current_submit
+
     if not question or not question.strip():
         return no_update, no_update, no_update
 
     context_snapshot = _build_chat_context_snapshot()
     if not context_snapshot.get("initialized"):
-        state = _normalize_chat_state(chat_data)
         state.update({
             "status": "error",
             "error": str(context_snapshot.get("note") or "No simulation results are available."),
@@ -2412,7 +2564,7 @@ def stage_chat_request(n_clicks, n_submit, question, chat_data):
     model_name = app_state.get_role_model("role_3")
     request_id = _make_request_id()
     next_state = _stage_chat_request(
-        chat_data,
+        state,
         question.strip(),
         model_name,
         request_id,
@@ -2433,6 +2585,7 @@ def stage_chat_request(n_clicks, n_submit, question, chat_data):
 
 @callback(
     Output("chat-history-store", "data", allow_duplicate=True),
+    Output("chat-interpret-request-store", "data", allow_duplicate=True),
     Input("chat-interpret-request-store", "data"),
     State("chat-history-store", "data"),
     prevent_initial_call=True,
@@ -2445,7 +2598,7 @@ def stage_chat_request(n_clicks, n_submit, question, chat_data):
 def resolve_chat_request(request, chat_data):
     """Perform the interpretation and replace the pending bubble with the final reply."""
     if not request:
-        return no_update
+        return no_update, no_update
 
     import time
     from api.llm_audit import LlmAuditRecorder
@@ -2499,7 +2652,7 @@ def resolve_chat_request(request, chat_data):
             result=result,
             context_snapshot=context_snapshot,
             raw_response=raw_response,
-        )
+        ), None
     except Exception as e:
         elapsed = time.perf_counter() - t0
         role_calls = recorder.get_calls("role_3")
@@ -2526,7 +2679,7 @@ def resolve_chat_request(request, chat_data):
             context_snapshot=context_snapshot,
             raw_response=raw_response,
             error=f"Error: {e}",
-        )
+        ), None
 
 
 # =========================================================================
@@ -2537,7 +2690,7 @@ def resolve_chat_request(request, chat_data):
     Output("chat-thread", "children"),
     Output("chat-context-output", "children"),
     Input("chat-history-store", "data"),
-    Input("llm-studio-page-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
 )
 def render_chat_views(chat_data, page_state):
     """Render the interpreter transcript and the current simulation context."""
@@ -2569,7 +2722,7 @@ clientside_callback(
     """,
     Output("chat-thread-scroll-store", "data"),
     Input("chat-thread", "children"),
-    Input("llm-studio-page-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
     prevent_initial_call=True,
 )
 
@@ -2582,11 +2735,21 @@ clientside_callback(
     Output("profile-history-store", "data", allow_duplicate=True),
     Output("profile-input", "value", allow_duplicate=True),
     Input("btn-clear-profile", "n_clicks"),
+    State("profile-history-store", "data"),
     prevent_initial_call=True,
 )
-def clear_profile_conversation(n_clicks):
+def clear_profile_conversation(n_clicks, profile_data):
     """Reset the Profile Generator transcript so the user can start over."""
-    return _default_profile_state(), ""
+    state = _normalize_profile_state(profile_data)
+    current_clicks = int(n_clicks or 0)
+    if current_clicks <= state.get("last_clear_clicks", 0):
+        return no_update, no_update
+
+    reset_state = _default_profile_state()
+    reset_state["last_generate_clicks"] = state.get("last_generate_clicks", 0)
+    reset_state["last_submit_count"] = state.get("last_submit_count", 0)
+    reset_state["last_clear_clicks"] = current_clicks
+    return reset_state, ""
 
 
 # =========================================================================
@@ -2624,8 +2787,20 @@ def stage_profile_request(n_clicks, n_submit, description, profile_data):
     """Append the user message and a pending assistant bubble before generation starts."""
     if ctx.triggered_id not in {"btn-generate-profile", "profile-input"}:
         return no_update, no_update, no_update
+    state = _normalize_profile_state(profile_data)
+
+    if ctx.triggered_id == "btn-generate-profile":
+        current_clicks = int(n_clicks or 0)
+        if current_clicks <= state.get("last_generate_clicks", 0):
+            return no_update, no_update, no_update
+        state["last_generate_clicks"] = current_clicks
+    else:
+        current_submit = int(n_submit or 0)
+        if current_submit <= state.get("last_submit_count", 0):
+            return no_update, no_update, no_update
+        state["last_submit_count"] = current_submit
+
     if not description or not description.strip():
-        state = _normalize_profile_state(profile_data)
         state.update({
             "status": "empty",
             "error": "Please enter an agent type description.",
@@ -2638,7 +2813,7 @@ def stage_profile_request(n_clicks, n_submit, description, profile_data):
 
     model_name = app_state.get_role_model("role_2")
     request_id = _make_request_id()
-    next_state = _stage_profile_request(profile_data, description.strip(), model_name, request_id)
+    next_state = _stage_profile_request(state, description.strip(), model_name, request_id)
     request = {
         "request_id": request_id,
         "description": description.strip(),
@@ -2653,6 +2828,7 @@ def stage_profile_request(n_clicks, n_submit, description, profile_data):
 
 @callback(
     Output("profile-history-store", "data", allow_duplicate=True),
+    Output("profile-generate-request-store", "data", allow_duplicate=True),
     Input("profile-generate-request-store", "data"),
     State("profile-history-store", "data"),
     prevent_initial_call=True,
@@ -2668,7 +2844,7 @@ def stage_profile_request(n_clicks, n_submit, description, profile_data):
 def resolve_profile_request(request, profile_data):
     """Perform the generation and replace the pending bubble with the final reply."""
     if not request:
-        return no_update
+        return no_update, no_update
 
     import time
     from api.llm_audit import LlmAuditRecorder
@@ -2705,7 +2881,7 @@ def resolve_profile_request(request, profile_data):
             elapsed,
             result=result,
             raw_response=raw_response,
-        )
+        ), None
     except Exception as e:
         elapsed = time.perf_counter() - t0
         role_calls = recorder.get_calls("role_2")
@@ -2730,7 +2906,7 @@ def resolve_profile_request(request, profile_data):
             elapsed,
             raw_response=raw_response,
             error=f"Error: {e}",
-        )
+        ), None
 
 
 # =========================================================================
@@ -2741,7 +2917,7 @@ def resolve_profile_request(request, profile_data):
     Output("profile-thread", "children"),
     Output("profile-output", "children"),
     Input("profile-history-store", "data"),
-    Input("llm-studio-page-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
 )
 def render_profile_views(profile_data, page_state):
     """Render the profile transcript and structured agent-type inspector."""
@@ -2773,7 +2949,7 @@ clientside_callback(
     """,
     Output("profile-thread-scroll-store", "data"),
     Input("profile-thread", "children"),
-    Input("llm-studio-page-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
     prevent_initial_call=True,
 )
 
@@ -2791,23 +2967,36 @@ ANNOTATABLE_CHARTS = [
 
 
 @callback(
-    Output("annotations-output", "children"),
+    Output("annotation-history-store", "data", allow_duplicate=True),
     Input("btn-annotate-charts", "n_clicks"),
+    State("annotation-history-store", "data"),
     prevent_initial_call=True,
+    running=[
+        (Output("btn-annotate-charts", "disabled"), True, False),
+        (Output("btn-clear-annotations", "disabled"), True, False),
+    ],
 )
-def annotate_charts_cb(n_clicks):
+def annotate_charts_cb(n_clicks, annotation_data):
+    state = _normalize_annotation_state(annotation_data)
+    current_clicks = int(n_clicks or 0)
+    if current_clicks <= state.get("last_annotate_clicks", 0):
+        return no_update
+
+    state["last_annotate_clicks"] = current_clicks
     sim_model = app_state.get_model()
     if sim_model is None or sim_model.current_step == 0:
-        return html.Div("Initialize and run a simulation first.",
-                        style={"color": "var(--cp-text-tertiary)",
-                               "fontSize": "var(--cp-text-sm)"})
+        state.update({
+            "status": "error",
+            "error": "Initialize and run a simulation first.",
+        })
+        return state
 
     import time
     from api.llm_service import annotate_visualization
     model_name = app_state.get_role_model("role_4")
     df = sim_model.get_model_dataframe()
 
-    annotation_cards = []
+    items = []
     for chart_key, chart_label in ANNOTATABLE_CHARTS:
         col_map = {
             "total_labor_hours": "total_labor_hours",
@@ -2838,36 +3027,63 @@ def annotate_charts_cb(n_clicks):
             _record_audit("Role 4", "visualization_annotator", model_name,
                           chart_label, result, elapsed)
 
-            annotation_cards.append(card(
-                title=result.get("chart_title", chart_label),
-                subtitle=result.get("hypothesis_tag", ""),
-                children=[
-                    html.P(result.get("caption", ""),
-                           style={"fontSize": "var(--cp-text-sm)"}),
-                    html.Div(
-                        [html.I(className="fas fa-lightbulb me-1"),
-                         result.get("key_insight", "")],
-                        style={"fontSize": "var(--cp-text-sm)",
-                               "color": "var(--cp-primary)",
-                               "fontWeight": "var(--cp-weight-semibold)"},
-                    ),
-                ],
-                footer=html.Span(f"{elapsed:.1f}s · {model_name}",
-                                 style={"fontSize": "var(--cp-text-xs)",
-                                        "color": "var(--cp-text-tertiary)"}),
-            ))
+            items.append({
+                "chart_key": chart_key,
+                "chart_label": chart_label,
+                "chart_title": result.get("chart_title", chart_label),
+                "hypothesis_tag": result.get("hypothesis_tag", ""),
+                "caption": result.get("caption", ""),
+                "key_insight": result.get("key_insight", ""),
+                "elapsed": elapsed,
+                "model": model_name,
+            })
         except Exception as e:
             elapsed = time.perf_counter() - t0
             _record_audit("Role 4", "visualization_annotator", model_name,
                           chart_label, None, elapsed, str(e))
-            annotation_cards.append(card(
-                title=chart_label,
-                children=html.Div(f"Error: {e}",
-                                  style={"color": "var(--cp-danger)",
-                                         "fontSize": "var(--cp-text-sm)"}),
-            ))
+            items.append({
+                "chart_key": chart_key,
+                "chart_label": chart_label,
+                "error": f"Error: {e}",
+                "elapsed": elapsed,
+                "model": model_name,
+            })
 
-    return html.Div(annotation_cards)
+    state.update({
+        "status": "success",
+        "items": items,
+        "generated_at": datetime.now().isoformat(),
+    })
+    return state
+
+
+@callback(
+    Output("annotation-history-store", "data", allow_duplicate=True),
+    Input("btn-clear-annotations", "n_clicks"),
+    State("annotation-history-store", "data"),
+    prevent_initial_call=True,
+)
+def clear_annotations_cb(n_clicks, annotation_data):
+    """Clear persisted annotation cards so the user can start fresh."""
+    state = _normalize_annotation_state(annotation_data)
+    current_clicks = int(n_clicks or 0)
+    if current_clicks <= state.get("last_clear_clicks", 0):
+        return no_update
+
+    reset_state = _default_annotation_state()
+    reset_state["last_annotate_clicks"] = state.get("last_annotate_clicks", 0)
+    reset_state["last_clear_clicks"] = current_clicks
+    return reset_state
+
+
+@callback(
+    Output("annotations-output", "children"),
+    Input("annotation-history-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
+)
+def render_annotations_output(annotation_data, page_state):
+    """Rebuild annotation cards from in-memory state after page remounts."""
+    return _build_annotations_output(annotation_data)
 
 
 # =========================================================================

@@ -60,15 +60,15 @@ def test_simulation_actions_render_before_parameter_sections() -> None:
     assert section_titles[:2] == ["PRESET", "SIMULATION"]
 
 
-def test_app_layout_exposes_session_store_for_llm_studio() -> None:
-    """LLM Studio state should live in a root-level session store."""
+def test_app_layout_exposes_memory_store_for_llm_studio() -> None:
+    """LLM Studio state should live in root-level memory stores."""
     layout = create_app().layout
     llm_store = next(
         child for child in layout.children
         if isinstance(child, dcc.Store) and child.id == "llm-studio-store"
     )
 
-    assert llm_store.storage_type == "session"
+    assert llm_store.storage_type == "memory"
     assert llm_store.data == {}
     scenario_queue = next(
         child for child in layout.children
@@ -79,7 +79,7 @@ def test_app_layout_exposes_session_store_for_llm_studio() -> None:
         child for child in layout.children
         if isinstance(child, dcc.Store) and child.id == "chat-history-store"
     )
-    assert chat_store.storage_type == "session"
+    assert chat_store.storage_type == "memory"
     assert chat_store.data == {}
     chat_queue = next(
         child for child in layout.children
@@ -90,17 +90,23 @@ def test_app_layout_exposes_session_store_for_llm_studio() -> None:
         child for child in layout.children
         if isinstance(child, dcc.Store) and child.id == "profile-history-store"
     )
-    assert profile_store.storage_type == "session"
+    assert profile_store.storage_type == "memory"
     assert profile_store.data == {}
     profile_queue = next(
         child for child in layout.children
         if isinstance(child, dcc.Store) and child.id == "profile-generate-request-store"
     )
     assert profile_queue.data is None
+    annotation_store = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "annotation-history-store"
+    )
+    assert annotation_store.storage_type == "memory"
+    assert annotation_store.data == {}
 
 
-def test_llm_studio_parser_input_uses_session_persistence() -> None:
-    """Scenario Parser textarea should preserve draft text across page remounts."""
+def test_llm_studio_parser_input_uses_memory_persistence() -> None:
+    """Scenario Parser textarea should preserve drafts during navigation only."""
     create_app()
     from dash_app.pages import llm_studio
 
@@ -120,7 +126,7 @@ def test_llm_studio_parser_input_uses_session_persistence() -> None:
     assert textarea.id == "scenario-input"
     assert "Describe daily life" in textarea.placeholder
     assert textarea.persistence is True
-    assert textarea.persistence_type == "session"
+    assert textarea.persistence_type == "memory"
     assert textarea.submit_on_enter is True
     assert card_body.children[0].id == "scenario-thread"
     assert actions.children[0].id == "btn-parse-scenario"
@@ -149,7 +155,7 @@ def test_llm_studio_chat_tab_uses_conversation_layout() -> None:
     assert card_body.children[0].id == "chat-thread"
     assert textarea.id == "chat-input"
     assert textarea.persistence is True
-    assert textarea.persistence_type == "session"
+    assert textarea.persistence_type == "memory"
     assert textarea.submit_on_enter is True
     assert actions.children[0].id == "btn-chat-send"
     assert actions.children[1].id == "btn-clear-chat"
@@ -183,7 +189,7 @@ def test_llm_studio_profile_tab_uses_conversation_layout() -> None:
     assert card_body.children[0].id == "profile-thread"
     assert textarea.id == "profile-input"
     assert textarea.persistence is True
-    assert textarea.persistence_type == "session"
+    assert textarea.persistence_type == "memory"
     assert textarea.submit_on_enter is True
     assert actions.children[0].id == "btn-generate-profile"
     assert actions.children[1].id == "btn-clear-profile"
@@ -200,6 +206,19 @@ def test_model_configuration_is_collapsed_by_default() -> None:
 
     assert collapse.id == "model-config-collapse"
     assert collapse.is_open is False
+
+
+def test_llm_studio_layout_includes_remount_interval() -> None:
+    """The page should include a mount interval that retriggers rehydration after navigation."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    page_layout = llm_studio.layout()
+    mount_interval = page_layout.children[0]
+
+    assert mount_interval.id == "llm-studio-mount-interval"
+    assert mount_interval.max_intervals == 1
+    assert mount_interval.interval == 50
 
 
 def test_llm_studio_refreshes_models_on_page_mount(monkeypatch) -> None:
@@ -284,6 +303,30 @@ def test_llm_studio_stages_pending_scenario_request() -> None:
     assert scenario_state["history"][1]["status"] == "pending"
 
 
+def test_llm_studio_ignores_replayed_scenario_button_click(monkeypatch) -> None:
+    """A remounted page should not treat the previous Parse click as a new request."""
+    create_app()
+    from dash_app.pages import llm_studio
+    monkeypatch.setattr(llm_studio, "ctx", SimpleNamespace(triggered_id="btn-parse-scenario"))
+
+    staged_state = llm_studio._stage_scenario_request(
+        {},
+        "Independent households with occasional outsourcing.",
+        "qwen3.5:4b",
+        "req-1",
+    )
+    staged_state["scenario"]["last_parse_clicks"] = 1
+
+    result = llm_studio.stage_scenario_request(
+        1,
+        0,
+        "Independent households with occasional outsourcing.",
+        staged_state,
+    )
+
+    assert result == (no_update, no_update, no_update)
+
+
 def test_llm_studio_clear_resets_scenario_conversation() -> None:
     """Clear should wipe the transcript and inspector so the user can start over."""
     create_app()
@@ -315,7 +358,12 @@ def test_llm_studio_clear_resets_scenario_conversation() -> None:
     cleared_state, cleared_input = llm_studio.clear_scenario_conversation(1, store_data)
 
     assert cleared_input == ""
-    assert cleared_state["scenario"] == llm_studio._default_scenario_state()
+    scenario_state = cleared_state["scenario"]
+    assert scenario_state["status"] == "idle"
+    assert scenario_state["history"] == []
+    assert scenario_state["result"] is None
+    assert scenario_state["raw_response"] is None
+    assert scenario_state["last_clear_clicks"] == 1
 
 
 def test_llm_studio_stages_pending_chat_request() -> None:
@@ -349,6 +397,32 @@ def test_llm_studio_stages_pending_chat_request() -> None:
     assert chat_state["history"][1]["status"] == "pending"
 
 
+def test_llm_studio_ignores_replayed_chat_button_click(monkeypatch) -> None:
+    """A remounted page should not treat the previous Ask click as a new request."""
+    create_app()
+    from dash_app.pages import llm_studio
+    monkeypatch.setattr(llm_studio, "ctx", SimpleNamespace(triggered_id="btn-chat-send"))
+
+    state = llm_studio._stage_chat_request(
+        {"last_send_clicks": 1},
+        "Why is stress rising now?",
+        "qwen3.5:4b",
+        "chat-1",
+        {
+            "initialized": True,
+            "current_step": 24,
+            "preset": "custom",
+            "note": "This snapshot is injected into the interpreter prompt together with your question.",
+            "latest_metrics": {"avg_stress": 0.21},
+            "params": {"delegation_preference_mean": 0.55},
+        },
+    )
+
+    result = llm_studio.stage_chat_request(1, 0, "Why is stress rising now?", state)
+
+    assert result == (no_update, no_update, no_update)
+
+
 def test_llm_studio_stages_pending_profile_request() -> None:
     """Submitting a profile description should create a user turn and pending generator turn."""
     create_app()
@@ -367,6 +441,29 @@ def test_llm_studio_stages_pending_profile_request() -> None:
     assert len(profile_state["history"]) == 2
     assert profile_state["history"][0]["role"] == "user"
     assert profile_state["history"][1]["status"] == "pending"
+
+
+def test_llm_studio_ignores_replayed_profile_button_click(monkeypatch) -> None:
+    """A remounted page should not treat the previous Generate click as a new request."""
+    create_app()
+    from dash_app.pages import llm_studio
+    monkeypatch.setattr(llm_studio, "ctx", SimpleNamespace(triggered_id="btn-generate-profile"))
+
+    state = llm_studio._stage_profile_request(
+        {"last_generate_clicks": 1},
+        "A busy dual-income household that outsources chores but handles paperwork well.",
+        "qwen3.5:4b",
+        "profile-1",
+    )
+
+    result = llm_studio.stage_profile_request(
+        1,
+        0,
+        "A busy dual-income household that outsources chores but handles paperwork well.",
+        state,
+    )
+
+    assert result == (no_update, no_update, no_update)
 
 
 def test_llm_studio_profile_prompt_map_returns_expected_text() -> None:
@@ -509,6 +606,63 @@ def test_llm_studio_profile_output_shows_generated_agent_type() -> None:
     assert "simulation-ready agent type" in body.children[9].children
     assert body.children[10].children == "Raw LLM Output"
     assert "raw profile JSON" in body.children[11].children[0].children
+
+
+def test_llm_studio_annotations_rehydrate_from_memory_state() -> None:
+    """Annotations should rebuild from the in-memory store after returning to the page."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    state = {
+        "status": "success",
+        "generated_at": "2026-03-26T12:00:00",
+        "items": [
+            {
+                "chart_key": "total_labor_hours",
+                "chart_label": "Total Labor Hours (H1)",
+                "chart_title": "Labor Hours Keep Rising",
+                "hypothesis_tag": "H1",
+                "caption": "Labor demand keeps climbing as delegation expands.",
+                "key_insight": "Service convenience increases total system work.",
+                "elapsed": 1.4,
+                "model": "qwen3.5:4b",
+            }
+        ],
+    }
+
+    rendered = llm_studio.render_annotations_output(state, 1)
+
+    assert rendered.children[0].className == "cp-card"
+    header = rendered.children[0].children[0]
+    title_wrap = header.children[0]
+    assert title_wrap.children[0].children == "Labor Hours Keep Rising"
+    body = rendered.children[0].children[1]
+    assert "Labor demand keeps climbing" in body.children[0].children
+    assert "Service convenience increases total system work." in body.children[1].children[1]
+
+
+def test_llm_studio_ignores_replayed_annotation_click(monkeypatch) -> None:
+    """A remounted page should not retrigger chart annotation for the same button click."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    called = {"value": False}
+
+    def fake_annotate_visualization(*args, **kwargs):
+        called["value"] = True
+        return {}
+
+    monkeypatch.setitem(sys.modules, "api.llm_service", SimpleNamespace(
+        annotate_visualization=fake_annotate_visualization
+    ))
+
+    result = llm_studio.annotate_charts_cb(
+        1,
+        {"status": "success", "items": [], "last_annotate_clicks": 1},
+    )
+
+    assert result is no_update
+    assert called["value"] is False
 
 
 def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:

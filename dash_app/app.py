@@ -61,8 +61,9 @@ def _build_layout() -> html.Div:
             # Simulation state trigger — chart callbacks watch this store.
             dcc.Store(id="sim-trigger-store", data={"step": 0, "action": "none"}),
 
-            # LLM Studio UI state — persisted across page navigation in this browser tab.
-            dcc.Store(id="llm-studio-store", data={}, storage_type="session"),
+            # LLM Studio UI state — kept in browser memory so it survives in-app navigation
+            # but resets on full reload, tab close, or server restart.
+            dcc.Store(id="llm-studio-store", data={}, storage_type="memory"),
 
             # Scenario Parser request queue — used to show a pending state before LLM returns.
             dcc.Store(id="scenario-parse-request-store", data=None),
@@ -70,14 +71,17 @@ def _build_layout() -> html.Div:
             # Result Interpreter request queue — used to stage the chat turn before the LLM returns.
             dcc.Store(id="chat-interpret-request-store", data=None),
 
-            # Result Interpreter UI state — persisted across page navigation in this browser tab.
-            dcc.Store(id="chat-history-store", data={}, storage_type="session"),
+            # Result Interpreter UI state — survives in-app navigation only.
+            dcc.Store(id="chat-history-store", data={}, storage_type="memory"),
 
             # Profile Generator request queue — used to show a pending state before the LLM returns.
             dcc.Store(id="profile-generate-request-store", data=None),
 
-            # Profile Generator UI state — persisted across page navigation in this browser tab.
-            dcc.Store(id="profile-history-store", data={}, storage_type="session"),
+            # Profile Generator UI state — survives in-app navigation only.
+            dcc.Store(id="profile-history-store", data={}, storage_type="memory"),
+
+            # Visualization Annotator UI state — survives in-app navigation only.
+            dcc.Store(id="annotation-history-store", data={}, storage_type="memory"),
 
             # LLM audit log trigger — updated after each LLM call
             dcc.Store(id="audit-trigger-store", data=0),
