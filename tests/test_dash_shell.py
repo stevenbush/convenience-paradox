@@ -103,6 +103,16 @@ def test_app_layout_exposes_memory_store_for_llm_studio() -> None:
     )
     assert annotation_store.storage_type == "memory"
     assert annotation_store.data == {}
+    annotation_queue = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "annotation-annotate-request-store"
+    )
+    assert annotation_queue.data is None
+    audit_snapshot = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "audit-trigger-store"
+    )
+    assert audit_snapshot.data == []
 
 
 def test_llm_studio_parser_input_uses_memory_persistence() -> None:
@@ -194,6 +204,46 @@ def test_llm_studio_profile_tab_uses_conversation_layout() -> None:
     assert actions.children[0].id == "btn-generate-profile"
     assert actions.children[1].id == "btn-clear-profile"
     assert actions.children[1].children[1] == "Clear Conversation"
+
+
+def test_llm_studio_annotations_tab_uses_guided_workspace_layout() -> None:
+    """Annotations should expose a compact guide plus annotate and clear actions."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    annotations_tab = llm_studio._tab_annotations()
+    intro = annotations_tab.children[0]
+    actions = annotations_tab.children[1]
+    output = annotations_tab.children[2]
+
+    assert intro.className == "cp-scenario-guide"
+    assert intro.children[0].children == "How To Use Annotations"
+    assert "Visualization Annotator" in intro.children[1].children
+    assert "cp-scenario__composer-actions" in actions.className
+    assert actions.children[0].id == "btn-annotate-charts"
+    assert actions.children[1].id == "btn-clear-annotations"
+    assert output.id == "annotations-output"
+
+
+def test_llm_studio_audit_tab_uses_guided_workspace_layout() -> None:
+    """Audit Log should expose guidance, actions, table slot, and detail inspector slot."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    audit_tab = llm_studio._tab_audit()
+    intro = audit_tab.children[0]
+    actions = audit_tab.children[1]
+    table_slot = audit_tab.children[2]
+    detail_slot = audit_tab.children[3]
+
+    assert intro.className == "cp-scenario-guide"
+    assert intro.children[0].children == "How To Use Audit Log"
+    assert "session-level trail" in intro.children[1].children
+    assert "cp-scenario__composer-actions" in actions.className
+    assert actions.children[0].id == "btn-refresh-audit"
+    assert actions.children[1].id == "btn-clear-audit"
+    assert table_slot.id == "audit-log-content"
+    assert detail_slot.id == "audit-log-detail"
 
 
 def test_model_configuration_is_collapsed_by_default() -> None:
@@ -608,37 +658,119 @@ def test_llm_studio_profile_output_shows_generated_agent_type() -> None:
     assert "raw profile JSON" in body.children[11].children[0].children
 
 
+def test_llm_studio_stages_pending_annotation_cards(monkeypatch) -> None:
+    """Annotate All Charts should immediately stage chart previews and pending states."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    monkeypatch.setattr(
+        llm_studio,
+        "_build_annotation_snapshot",
+        lambda: {
+            "initialized": True,
+            "current_step": 12,
+            "preset": "custom",
+            "model": "qwen3.5:4b",
+            "note": "Injected chart summaries.",
+            "items": [
+                {
+                    "chart_key": "total_labor_hours",
+                    "chart_label": "Total Labor Hours (H1)",
+                    "chart_subtitle": "System-wide labor demand over time",
+                    "chart_description": "Shows whether delegation raises aggregate labor.",
+                    "metrics": {"last": 42.0, "mean": 36.4, "trend": "rising", "steps": 12},
+                    "summary_metrics": [
+                        {"label": "Latest", "value": 42.0},
+                        {"label": "Mean", "value": 36.4},
+                        {"label": "Trend", "value": "Rising"},
+                        {"label": "Steps", "value": 12},
+                    ],
+                    "preview": {
+                        "kind": "line",
+                        "steps": [0, 1, 2],
+                        "traces": [
+                            {"type": "line", "name": "Labor Hours", "values": [24.0, 31.0, 42.0], "color": "#2C8C99"}
+                        ],
+                    },
+                    "status": "pending",
+                    "caption": None,
+                    "key_insight": None,
+                    "chart_title": None,
+                    "hypothesis_tag": None,
+                    "elapsed": None,
+                    "model": None,
+                    "error": None,
+                }
+            ],
+        },
+    )
+
+    state, request = llm_studio.annotate_charts_cb(1, {})
+
+    assert state["status"] == "pending"
+    assert state["current_step"] == 12
+    assert state["items"][0]["status"] == "pending"
+    assert request["request_id"] == state["request_id"]
+    assert request["items"][0]["chart_key"] == "total_labor_hours"
+
+
 def test_llm_studio_annotations_rehydrate_from_memory_state() -> None:
-    """Annotations should rebuild from the in-memory store after returning to the page."""
+    """Annotations should rebuild the chart workspace from the in-memory store."""
     create_app()
     from dash_app.pages import llm_studio
 
     state = {
         "status": "success",
-        "generated_at": "2026-03-26T12:00:00",
+        "current_step": 18,
+        "preset": "custom",
+        "model": "qwen3.5:4b",
+        "note": "Injected chart summaries.",
         "items": [
             {
                 "chart_key": "total_labor_hours",
                 "chart_label": "Total Labor Hours (H1)",
+                "chart_subtitle": "System-wide labor demand over time",
+                "chart_description": "Shows whether delegation raises aggregate labor.",
                 "chart_title": "Labor Hours Keep Rising",
                 "hypothesis_tag": "H1",
                 "caption": "Labor demand keeps climbing as delegation expands.",
                 "key_insight": "Service convenience increases total system work.",
+                "metrics": {"last": 42.0, "mean": 36.4, "trend": "rising", "steps": 18},
+                "summary_metrics": [
+                    {"label": "Latest", "value": 42.0},
+                    {"label": "Mean", "value": 36.4},
+                    {"label": "Trend", "value": "Rising"},
+                    {"label": "Steps", "value": 18},
+                ],
+                "preview": {
+                    "kind": "line",
+                    "steps": [0, 1, 2],
+                    "traces": [
+                        {"type": "line", "name": "Labor Hours", "values": [24.0, 31.0, 42.0], "color": "#2C8C99"}
+                    ],
+                },
                 "elapsed": 1.4,
                 "model": "qwen3.5:4b",
+                "status": "success",
             }
         ],
     }
 
     rendered = llm_studio.render_annotations_output(state, 1)
 
-    assert rendered.children[0].className == "cp-card"
-    header = rendered.children[0].children[0]
+    assert rendered.children[1].className == "cp-chat-context__grid"
+    assert rendered.children[3].className == "cp-annotation__list"
+    annotation_card = rendered.children[3].children[0]
+    assert "cp-annotation__card" in annotation_card.className
+    header = annotation_card.children[0]
     title_wrap = header.children[0]
-    assert title_wrap.children[0].children == "Labor Hours Keep Rising"
-    body = rendered.children[0].children[1]
-    assert "Labor demand keeps climbing" in body.children[0].children
-    assert "Service convenience increases total system work." in body.children[1].children[1]
+    assert title_wrap.children[0].children == "Total Labor Hours (H1)"
+    body = annotation_card.children[1].children
+    assert body.className == "cp-annotation__body"
+    analysis = body.children[1]
+    assert analysis.children[1].children == "Labor Hours Keep Rising"
+    assert "Labor demand keeps climbing" in analysis.children[2].children
+    assert "Service convenience increases total system work." in analysis.children[3].children[1]
 
 
 def test_llm_studio_ignores_replayed_annotation_click(monkeypatch) -> None:
@@ -648,21 +780,264 @@ def test_llm_studio_ignores_replayed_annotation_click(monkeypatch) -> None:
 
     called = {"value": False}
 
-    def fake_annotate_visualization(*args, **kwargs):
+    def fake_snapshot():
         called["value"] = True
-        return {}
+        return {"initialized": True, "items": []}
 
-    monkeypatch.setitem(sys.modules, "api.llm_service", SimpleNamespace(
-        annotate_visualization=fake_annotate_visualization
-    ))
+    monkeypatch.setattr(llm_studio, "_build_annotation_snapshot", fake_snapshot)
 
     result = llm_studio.annotate_charts_cb(
         1,
         {"status": "success", "items": [], "last_annotate_clicks": 1},
     )
 
-    assert result is no_update
+    assert result == (no_update, no_update)
     assert called["value"] is False
+
+
+def test_llm_studio_ignores_annotation_click_while_request_is_pending(monkeypatch) -> None:
+    """A second click should not queue a new annotation request while one is already running."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    called = {"value": False}
+
+    def fake_snapshot():
+        called["value"] = True
+        return {"initialized": True, "items": []}
+
+    monkeypatch.setattr(llm_studio, "_build_annotation_snapshot", fake_snapshot)
+
+    result = llm_studio.annotate_charts_cb(
+        2,
+        {"status": "pending", "request_id": "req-123", "items": [], "last_annotate_clicks": 1},
+    )
+
+    assert result == (no_update, no_update)
+    assert called["value"] is False
+
+
+def test_llm_studio_record_audit_keeps_raw_input_and_output() -> None:
+    """Session audit entries should retain inspectable raw input/output payloads."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    app_state.clear_audit_log()
+    llm_studio._record_audit(
+        "Role 1",
+        "scenario_parser",
+        "qwen3.5:4b",
+        "Busy households rely on services.",
+        {"delegation_preference_mean": 0.6},
+        1.4,
+        input_payload={"user_prompt": "Busy households rely on services."},
+        output_payload={"raw_response": "{\"delegation_preference_mean\": 0.6}"},
+    )
+
+    entry = app_state.get_audit_log()[-1]
+
+    assert entry["input_payload"]["user_prompt"] == "Busy households rely on services."
+    assert entry["output_payload"]["raw_response"] == "{\"delegation_preference_mean\": 0.6}"
+
+
+def test_llm_studio_audit_log_table_exposes_inspect_action() -> None:
+    """Rendered audit rows should include an inspect button for opening raw payload details."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    table = llm_studio._build_audit_log_table([
+        {
+            "timestamp": "15:32:06",
+            "role": "Role 1",
+            "call_kind": "scenario_parser",
+            "model": "qwen3.5:4b",
+            "elapsed": 7.8,
+            "status": "success",
+            "prompt_preview": "Busy households rely on services.",
+        }
+    ])
+
+    row = table.children[1].children[0]
+    inspect_button = row.children[7].children
+
+    assert inspect_button.id == {"type": "audit-view-btn", "index": 0}
+    assert inspect_button.children[1] == "Inspect"
+
+
+def test_llm_studio_audit_detail_renders_original_input_and_output() -> None:
+    """Selected audit entries should expose collapsible original input/output blocks."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    detail = llm_studio._build_audit_detail(
+        {
+            "role": "Role 3",
+            "call_kind": "result_interpreter",
+            "model": "qwen3.5:4b",
+            "timestamp": "15:32:06",
+            "elapsed": 2.8,
+            "status": "success",
+            "prompt_preview": "Why is stress increasing?",
+            "input_payload": {"user_prompt": "Why is stress increasing?"},
+            "output_payload": {"raw_response": "{\"answer\": \"Stress rises with delegation.\"}"},
+        }
+    )
+
+    body = detail.children[1]
+
+    assert detail.children[0].children[0].children[0].children == "Interaction Details"
+    assert "detail panel below exposes" in body.children[2].children
+    assert body.children[3].children == "Original Input"
+    assert body.children[4].children[0].children == "View Original Input"
+    assert body.children[5].children == "Original Output"
+    assert body.children[6].children[0].children == "View Original Output"
+
+
+def test_llm_studio_audit_detail_handles_pattern_trigger_ids(monkeypatch) -> None:
+    """Inspect buttons should work when Dash passes a dict-like triggered_id."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    app_state.clear_audit_log()
+    llm_studio._record_audit(
+        "Role 1",
+        "scenario_parser",
+        "qwen3.5:4b",
+        "Busy households rely on services.",
+        {"delegation_preference_mean": 0.6},
+        1.4,
+        input_payload={"user_prompt": "Busy households rely on services."},
+        output_payload={"raw_response": "{\"delegation_preference_mean\": 0.6}"},
+    )
+    monkeypatch.setattr(
+        llm_studio,
+        "ctx",
+        SimpleNamespace(triggered_id={"type": "audit-view-btn", "index": 0}),
+    )
+
+    detail = llm_studio.update_audit_detail([1], 0, 0, 0, list(reversed(app_state.get_audit_log())))
+
+    assert detail.children[0].children[0].children[0].children == "Interaction Details"
+    assert "Busy households rely on services." in detail.children[0].children[0].children[1].children
+
+
+def test_llm_studio_audit_detail_uses_rendered_table_snapshot(monkeypatch) -> None:
+    """Inspect should stay aligned with the rows currently shown in the table."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    rendered_entries = [
+        {
+            "role": "Role 1",
+            "call_kind": "scenario_parser",
+            "model": "qwen3.5:4b",
+            "timestamp": "15:32:06",
+            "elapsed": 1.4,
+            "status": "success",
+            "prompt_preview": "Older rendered row",
+            "input_payload": {"user_prompt": "Older rendered row"},
+            "output_payload": {"raw_response": "{\"delegation_preference_mean\": 0.6}"},
+        }
+    ]
+    app_state.clear_audit_log()
+    app_state.append_audit_entry(
+        {
+            "role": "Role 3",
+            "call_kind": "result_interpreter",
+            "model": "qwen3.5:4b",
+            "timestamp": "15:33:10",
+            "elapsed": 2.1,
+            "status": "success",
+            "prompt_preview": "Newer live row",
+            "input_payload": {"user_prompt": "Newer live row"},
+            "output_payload": {"raw_response": "{\"answer\": \"Newer result\"}"},
+        }
+    )
+    monkeypatch.setattr(
+        llm_studio,
+        "ctx",
+        SimpleNamespace(triggered_id={"type": "audit-view-btn", "index": 0}),
+    )
+
+    detail = llm_studio.update_audit_detail([1], 0, 0, 0, rendered_entries)
+
+    assert "Older rendered row" in detail.children[0].children[0].children[1].children
+
+
+def test_llm_studio_clearing_annotations_also_cancels_pending_request() -> None:
+    """Clearing the workspace should reset both the history and queued request store."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    cleared_state, cleared_request = llm_studio.clear_annotations_cb(
+        1,
+        {
+            "status": "pending",
+            "request_id": "req-123",
+            "items": [{"chart_key": "total_labor_hours", "status": "pending"}],
+            "last_annotate_clicks": 4,
+        },
+    )
+
+    assert cleared_state["status"] == "idle"
+    assert cleared_state["request_id"] is None
+    assert cleared_state["items"] == []
+    assert cleared_state["last_annotate_clicks"] == 4
+    assert cleared_state["last_clear_clicks"] == 1
+    assert cleared_request is None
+
+
+def test_llm_studio_ignores_stale_annotation_request_after_clear() -> None:
+    """A stale queued request should not repopulate the workspace after clearing."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    result = llm_studio.resolve_annotation_request(
+        {
+            "request_id": "req-123",
+            "model": "qwen3.5:4b",
+            "items": [{"chart_key": "total_labor_hours", "chart_label": "Total Labor Hours (H1)", "metrics": {}}],
+        },
+        {
+            "status": "idle",
+            "request_id": None,
+            "items": [],
+        },
+    )
+
+    assert result == (no_update, no_update)
+
+
+def test_llm_studio_annotation_snapshot_uses_dashboard_step_axis(monkeypatch) -> None:
+    """Annotation previews should use the same zero-based step axis as the dashboard charts."""
+    create_app()
+    import pandas as pd
+    from dash_app.pages import llm_studio
+
+    class StubModel:
+        current_step = 3
+
+        @staticmethod
+        def get_model_dataframe():
+            return pd.DataFrame(
+                {
+                    "total_labor_hours": [24.0, 31.0, 42.0],
+                    "avg_stress": [0.2, 0.3, 0.5],
+                    "avg_delegation_rate": [0.4, 0.45, 0.5],
+                    "social_efficiency": [1.1, 1.0, 0.9],
+                    "unmatched_tasks": [0, 1, 2],
+                    "tasks_delegated_frac": [0.25, 0.35, 0.45],
+                }
+            )
+
+    monkeypatch.setattr(llm_studio.app_state, "get_model", lambda: StubModel())
+    monkeypatch.setattr(llm_studio.app_state, "get_current_preset", lambda: "custom")
+    monkeypatch.setattr(llm_studio.app_state, "get_role_model", lambda role: "qwen3.5:4b")
+
+    snapshot = llm_studio._build_annotation_snapshot()
+
+    assert snapshot["initialized"] is True
+    assert snapshot["items"][0]["preview"]["steps"] == [0, 1, 2]
 
 
 def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:

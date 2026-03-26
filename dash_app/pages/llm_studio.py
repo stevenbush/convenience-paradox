@@ -28,8 +28,9 @@ from typing import Any
 import dash
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
-from dash import html, dcc, callback, clientside_callback, Input, Output, State, ctx, no_update
+from dash import html, dcc, callback, clientside_callback, Input, Output, State, ctx, no_update, ALL
 
+from api.llm_audit import make_json_safe
 from api.schemas import SimulationParams, AgentProfileOutput
 from dash_app.components.card import card
 from dash_app.components.badges import status_badge, llm_status_dot
@@ -176,6 +177,60 @@ PROFILE_NEXT_STEP_GUIDANCE = (
     "how often the archetype outsources tasks, while the four skill values shape "
     "how capable the agent is at self-serving across task domains. Generate a few "
     "contrasting profiles to create a more heterogeneous population."
+)
+
+ANNOTATION_GUIDANCE = (
+    "Review the exact dashboard charts being sent to the Visualization Annotator. "
+    "Click Annotate All Charts to have the LLM produce one caption and one key "
+    "insight per chart, grounded in the current simulation run."
+)
+
+ANNOTATION_WORKFLOW_NOTE = (
+    "Run a simulation first, then annotate the current chart set. Each card below "
+    "shows the chart preview, the compact data summary injected into the prompt, "
+    "and the generated interpretation once the role finishes."
+)
+
+ANNOTATION_CHART_SPECS = [
+    {
+        "chart_key": "total_labor_hours",
+        "chart_label": "Total Labor Hours",
+        "display_title": "Total Labor Hours (H1)",
+        "subtitle": "System-wide labor demand over time",
+        "description": "Shows whether delegation raises aggregate labor instead of reducing it.",
+    },
+    {
+        "chart_key": "stress_delegation",
+        "chart_label": "Stress & Delegation",
+        "display_title": "Stress & Delegation (H2/H3)",
+        "subtitle": "Dual-axis view of stress and delegation",
+        "description": "Shows whether convenience is reducing strain or amplifying it.",
+    },
+    {
+        "chart_key": "social_efficiency",
+        "chart_label": "Social Efficiency",
+        "display_title": "Social Efficiency (H2)",
+        "subtitle": "Tasks completed per unit of labor",
+        "description": "Shows whether the system becomes more efficient as delegation grows.",
+    },
+    {
+        "chart_key": "market_health",
+        "chart_label": "Market Health",
+        "display_title": "Market Health",
+        "subtitle": "Unmatched demand and delegation share",
+        "description": "Shows whether the service market can absorb delegated work.",
+    },
+]
+
+AUDIT_LOG_GUIDANCE = (
+    "Review the session-level trail of every LLM interaction triggered from LLM Studio. "
+    "Use Inspect on any row to open the original request context and the original response "
+    "captured for that call, without leaving the current workspace."
+)
+
+AUDIT_LOG_DETAIL_NOTE = (
+    "The table gives a compact cross-role summary, while the detail panel below exposes the "
+    "full input and output payloads used for manual verification, debugging, and prompt review."
 )
 
 
@@ -1429,6 +1484,11 @@ def _default_annotation_state() -> dict[str, Any]:
     return {
         "status": "idle",
         "error": None,
+        "note": ANNOTATION_WORKFLOW_NOTE,
+        "current_step": 0,
+        "preset": "custom",
+        "model": None,
+        "request_id": None,
         "items": [],
         "generated_at": None,
         "last_annotate_clicks": 0,
@@ -1444,6 +1504,11 @@ def _normalize_annotation_state(data: dict[str, Any] | None) -> dict[str, Any]:
 
     state["status"] = str(data.get("status") or "idle")
     state["error"] = data.get("error")
+    state["note"] = str(data.get("note") or ANNOTATION_WORKFLOW_NOTE)
+    state["current_step"] = int(data.get("current_step") or 0)
+    state["preset"] = str(data.get("preset") or "custom")
+    state["model"] = data.get("model")
+    state["request_id"] = data.get("request_id")
     state["generated_at"] = data.get("generated_at")
     state["last_annotate_clicks"] = int(data.get("last_annotate_clicks") or 0)
     state["last_clear_clicks"] = int(data.get("last_clear_clicks") or 0)
@@ -1454,61 +1519,741 @@ def _normalize_annotation_state(data: dict[str, Any] | None) -> dict[str, Any]:
     return state
 
 
-def _build_annotations_output(annotation_state: dict[str, Any] | None):
-    """Render persisted annotation cards for the Annotations tab."""
-    state = _normalize_annotation_state(annotation_state)
-    status = state.get("status", "idle")
+def _build_annotations_intro():
+    """Render a compact guide for the Visualization Annotator tab."""
+    return html.Div(
+        [
+            html.Div("How To Use Annotations", className="cp-scenario-guide__label"),
+            html.Div(
+                ANNOTATION_GUIDANCE,
+                className="cp-scenario-guide__text",
+            ),
+        ],
+        className="cp-scenario-guide",
+    )
 
-    if status == "idle":
-        return _scenario_placeholder(
-            "Annotate the current dashboard charts to generate compact captions and key insights."
-        )
 
-    if status == "error":
-        return html.Div(
-            state.get("error") or "Unable to annotate the current charts.",
-            style={"color": "var(--cp-danger)", "fontSize": "var(--cp-text-sm)"},
-        )
+def _build_audit_intro():
+    """Render a compact guide for the Audit Log tab."""
+    return html.Div(
+        [
+            html.Div("How To Use Audit Log", className="cp-scenario-guide__label"),
+            html.Div(
+                AUDIT_LOG_GUIDANCE,
+                className="cp-scenario-guide__text",
+            ),
+        ],
+        className="cp-scenario-guide",
+    )
 
-    cards = []
-    for item in state.get("items", []):
-        if item.get("error"):
-            cards.append(card(
-                title=str(item.get("chart_label") or "Chart"),
-                children=html.Div(
-                    str(item.get("error")),
-                    style={"color": "var(--cp-danger)", "fontSize": "var(--cp-text-sm)"},
-                ),
+
+def _annotation_trend_label(values: list[float]) -> str:
+    """Return a coarse trend label for one chart series."""
+    if len(values) < 2:
+        return "stable"
+    start, end = float(values[0]), float(values[-1])
+    tolerance = max(abs(start), abs(end), 1.0) * 0.02
+    if abs(end - start) <= tolerance:
+        return "stable"
+    return "rising" if end > start else "falling"
+
+
+def _annotation_series_values(df, column: str) -> list[float]:
+    """Return one dataframe column as a JSON-serialisable float list."""
+    return [round(float(value), 4) for value in df[column].tolist()]
+
+
+def _build_annotation_item(spec: dict[str, str], df) -> dict[str, Any]:
+    """Construct one chart preview payload and summary metrics for annotation."""
+    # Match the simulation dashboard's step axis exactly so the preview cards
+    # show the same time index the user sees on the main charts.
+    steps = list(range(len(df)))
+    chart_key = spec["chart_key"]
+
+    if chart_key == "total_labor_hours":
+        labor_values = _annotation_series_values(df, "total_labor_hours")
+        metrics = {
+            "min": round(min(labor_values), 4),
+            "max": round(max(labor_values), 4),
+            "mean": round(sum(labor_values) / len(labor_values), 4),
+            "last": labor_values[-1],
+            "trend": _annotation_trend_label(labor_values),
+            "steps": len(labor_values),
+        }
+        summary_metrics = [
+            {"label": "Latest", "value": metrics["last"]},
+            {"label": "Mean", "value": metrics["mean"]},
+            {"label": "Trend", "value": str(metrics["trend"]).title()},
+            {"label": "Steps", "value": metrics["steps"]},
+        ]
+        preview = {
+            "kind": "line",
+            "steps": steps,
+            "traces": [
+                {
+                    "type": "line",
+                    "name": "Labor Hours",
+                    "values": labor_values,
+                    "color": CHART_COLORWAY[0],
+                },
+            ],
+        }
+    elif chart_key == "stress_delegation":
+        stress_values = _annotation_series_values(df, "avg_stress")
+        delegation_values = _annotation_series_values(df, "avg_delegation_rate")
+        metrics = {
+            "avg_stress_min": round(min(stress_values), 4),
+            "avg_stress_max": round(max(stress_values), 4),
+            "avg_stress_mean": round(sum(stress_values) / len(stress_values), 4),
+            "avg_stress_last": stress_values[-1],
+            "avg_stress_trend": _annotation_trend_label(stress_values),
+            "avg_delegation_rate_min": round(min(delegation_values), 4),
+            "avg_delegation_rate_max": round(max(delegation_values), 4),
+            "avg_delegation_rate_mean": round(sum(delegation_values) / len(delegation_values), 4),
+            "avg_delegation_rate_last": delegation_values[-1],
+            "avg_delegation_rate_trend": _annotation_trend_label(delegation_values),
+            "steps": len(stress_values),
+        }
+        summary_metrics = [
+            {"label": "Stress", "value": metrics["avg_stress_last"]},
+            {"label": "Delegation", "value": metrics["avg_delegation_rate_last"]},
+            {"label": "Stress Trend", "value": str(metrics["avg_stress_trend"]).title()},
+            {"label": "Steps", "value": metrics["steps"]},
+        ]
+        preview = {
+            "kind": "dual_line",
+            "steps": steps,
+            "traces": [
+                {
+                    "type": "line",
+                    "name": "Avg Stress",
+                    "values": stress_values,
+                    "color": CHART_COLORWAY[4],
+                    "axis": "y",
+                },
+                {
+                    "type": "line",
+                    "name": "Delegation Rate",
+                    "values": delegation_values,
+                    "color": CHART_COLORWAY[5],
+                    "axis": "y2",
+                    "dash": "dash",
+                },
+            ],
+        }
+    elif chart_key == "social_efficiency":
+        efficiency_values = _annotation_series_values(df, "social_efficiency")
+        metrics = {
+            "min": round(min(efficiency_values), 4),
+            "max": round(max(efficiency_values), 4),
+            "mean": round(sum(efficiency_values) / len(efficiency_values), 4),
+            "last": efficiency_values[-1],
+            "trend": _annotation_trend_label(efficiency_values),
+            "steps": len(efficiency_values),
+        }
+        summary_metrics = [
+            {"label": "Latest", "value": metrics["last"]},
+            {"label": "Mean", "value": metrics["mean"]},
+            {"label": "Trend", "value": str(metrics["trend"]).title()},
+            {"label": "Steps", "value": metrics["steps"]},
+        ]
+        preview = {
+            "kind": "line",
+            "steps": steps,
+            "traces": [
+                {
+                    "type": "line",
+                    "name": "Social Efficiency",
+                    "values": efficiency_values,
+                    "color": CHART_COLORWAY[2],
+                },
+            ],
+        }
+    else:
+        unmatched_values = _annotation_series_values(df, "unmatched_tasks")
+        delegation_values = _annotation_series_values(df, "tasks_delegated_frac")
+        metrics = {
+            "unmatched_tasks_min": round(min(unmatched_values), 4),
+            "unmatched_tasks_max": round(max(unmatched_values), 4),
+            "unmatched_tasks_mean": round(sum(unmatched_values) / len(unmatched_values), 4),
+            "unmatched_tasks_last": unmatched_values[-1],
+            "unmatched_tasks_trend": _annotation_trend_label(unmatched_values),
+            "tasks_delegated_frac_mean": round(sum(delegation_values) / len(delegation_values), 4),
+            "tasks_delegated_frac_last": delegation_values[-1],
+            "tasks_delegated_frac_trend": _annotation_trend_label(delegation_values),
+            "steps": len(unmatched_values),
+        }
+        summary_metrics = [
+            {"label": "Unmatched", "value": metrics["unmatched_tasks_last"]},
+            {"label": "Delegation", "value": metrics["tasks_delegated_frac_last"]},
+            {"label": "Trend", "value": str(metrics["unmatched_tasks_trend"]).title()},
+            {"label": "Steps", "value": metrics["steps"]},
+        ]
+        preview = {
+            "kind": "bar_line",
+            "steps": steps,
+            "traces": [
+                {
+                    "type": "bar",
+                    "name": "Unmatched Tasks",
+                    "values": unmatched_values,
+                    "color": CHART_COLORWAY[4],
+                    "axis": "y",
+                },
+                {
+                    "type": "line",
+                    "name": "Delegation Fraction",
+                    "values": delegation_values,
+                    "color": CHART_COLORWAY[1],
+                    "axis": "y2",
+                },
+            ],
+        }
+
+    return {
+        "chart_key": chart_key,
+        "chart_label": spec["display_title"],
+        "chart_subtitle": spec["subtitle"],
+        "chart_description": spec["description"],
+        "metrics": metrics,
+        "summary_metrics": summary_metrics,
+        "preview": preview,
+        "status": "pending",
+        "caption": None,
+        "key_insight": None,
+        "chart_title": None,
+        "hypothesis_tag": None,
+        "elapsed": None,
+        "model": None,
+        "error": None,
+    }
+
+
+def _build_annotation_snapshot() -> dict[str, Any]:
+    """Capture the exact chart summaries that will be sent to the annotator."""
+    sim_model = app_state.get_model()
+    preset = app_state.get_current_preset() or "custom"
+    model_name = app_state.get_role_model("role_4")
+
+    if sim_model is None or sim_model.current_step == 0:
+        return {
+            "initialized": False,
+            "current_step": 0,
+            "preset": preset,
+            "model": model_name,
+            "note": "Initialize a simulation and run at least one step to preview and annotate charts.",
+            "items": [],
+        }
+
+    df = sim_model.get_model_dataframe()
+    if df.empty:
+        return {
+            "initialized": False,
+            "current_step": sim_model.current_step,
+            "preset": preset,
+            "model": model_name,
+            "note": "Run at least one simulation step so the chart summaries contain observable data.",
+            "items": [],
+        }
+
+    return {
+        "initialized": True,
+        "current_step": sim_model.current_step,
+        "preset": preset,
+        "model": model_name,
+        "note": "Each chart preview and summary below is injected into the prompt before the annotator writes a caption and key insight.",
+        "items": [_build_annotation_item(spec, df) for spec in ANNOTATION_CHART_SPECS],
+    }
+
+
+def _build_annotation_preview_figure(item: dict[str, Any] | None) -> go.Figure:
+    """Render one compact chart preview from the stored annotation snapshot."""
+    item = item or {}
+    preview = item.get("preview") or {}
+    steps = preview.get("steps") or []
+
+    fig = go.Figure()
+    for trace in preview.get("traces", []):
+        axis = "y2" if trace.get("axis") == "y2" else None
+        if trace.get("type") == "bar":
+            fig.add_trace(go.Bar(
+                x=steps,
+                y=trace.get("values", []),
+                name=trace.get("name"),
+                marker_color=trace.get("color"),
+                opacity=0.72,
+                yaxis=axis,
             ))
-            continue
-
-        cards.append(card(
-            title=str(item.get("chart_title") or item.get("chart_label") or "Chart"),
-            subtitle=str(item.get("hypothesis_tag") or ""),
-            children=[
-                html.P(
-                    str(item.get("caption") or ""),
-                    style={"fontSize": "var(--cp-text-sm)"},
+        else:
+            fig.add_trace(go.Scatter(
+                x=steps,
+                y=trace.get("values", []),
+                mode="lines",
+                name=trace.get("name"),
+                line=dict(
+                    color=trace.get("color"),
+                    width=2.2,
+                    dash=trace.get("dash") or "solid",
                 ),
+                yaxis=axis,
+            ))
+
+    fig.update_layout(
+        height=220,
+        margin=dict(t=8, b=28, l=36, r=36),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+        xaxis=dict(
+            title=dict(text="Step", font=dict(size=10)),
+            showgrid=False,
+            zeroline=False,
+            tickfont=dict(size=10),
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor="rgba(148, 163, 184, 0.16)",
+            zeroline=False,
+            tickfont=dict(size=10),
+        ),
+    )
+
+    if preview.get("kind") in {"dual_line", "bar_line"}:
+        fig.update_layout(
+            yaxis2=dict(
+                overlaying="y",
+                side="right",
+                showgrid=False,
+                zeroline=False,
+                tickfont=dict(size=10),
+            )
+        )
+
+    return fig
+
+
+def _build_annotation_metric_grid(item: dict[str, Any] | None):
+    """Render a compact data-summary grid for one chart snapshot."""
+    item = item or {}
+    chips = [
+        html.Div(
+            [
+                html.Div(str(metric.get("label") or ""), className="cp-chat-context__label"),
                 html.Div(
-                    [
-                        html.I(className="fas fa-lightbulb me-1"),
-                        str(item.get("key_insight") or ""),
-                    ],
-                    style={
-                        "fontSize": "var(--cp-text-sm)",
-                        "color": "var(--cp-primary)",
-                        "fontWeight": "var(--cp-weight-semibold)",
-                    },
+                    _format_scenario_value(metric.get("value")),
+                    className="cp-chat-context__value",
                 ),
             ],
-            footer=html.Span(
-                f"{float(item.get('elapsed', 0.0)):.1f}s · {item.get('model') or 'LLM'}",
-                style={"fontSize": "var(--cp-text-xs)", "color": "var(--cp-text-tertiary)"},
-            ),
-        ))
+            className="cp-chat-context__chip",
+        )
+        for metric in item.get("summary_metrics", [])
+        if isinstance(metric, dict)
+    ]
+    return html.Div(chips, className="cp-chat-context__grid")
 
-    return html.Div(cards)
+
+def _build_annotation_status_badges(item: dict[str, Any] | None):
+    """Render compact status badges for one chart annotation card."""
+    item = item or {}
+    badges = []
+    status = item.get("status")
+    if status == "pending":
+        badges.append(status_badge("LLM thinking", "info"))
+    elif status == "success":
+        badges.append(status_badge("Annotation ready", "success"))
+    elif status == "error":
+        badges.append(status_badge("Annotation failed", "danger"))
+
+    if item.get("hypothesis_tag"):
+        badges.append(status_badge(str(item.get("hypothesis_tag")), "primary"))
+    return html.Div(badges, className="d-flex gap-2 flex-wrap")
+
+
+def _build_annotation_result_panel(item: dict[str, Any] | None):
+    """Render the right-side interpretation panel for one chart card."""
+    item = item or {}
+    status = item.get("status", "pending")
+
+    children = [
+        html.Div("Visualization Annotator", className="cp-chat__sender"),
+        html.Div("Injected Data Summary", className="cp-scenario__section-label"),
+        _build_annotation_metric_grid(item),
+    ]
+
+    raw_metrics_block = _build_scenario_raw_output(
+        item.get("metrics"),
+        summary_text="View injected chart summary",
+    )
+
+    if status == "pending":
+        children[1:1] = [
+            html.Div(
+                "Reviewing the chart trend, current level, and hypothesis relevance before writing the annotation.",
+                className="cp-scenario__reply-reasoning",
+            ),
+            html.Div(
+                [
+                    html.Span(className="cp-scenario__thinking-dot"),
+                    html.Span(className="cp-scenario__thinking-dot"),
+                    html.Span(className="cp-scenario__thinking-dot"),
+                ],
+                className="cp-scenario__thinking",
+            ),
+        ]
+    elif status == "error":
+        children[1:1] = [
+            html.Div(
+                str(item.get("error") or "Annotation failed."),
+                className="cp-scenario__reply-error",
+            ),
+        ]
+    else:
+        children[1:1] = [
+            html.Div(
+                str(item.get("chart_title") or item.get("chart_label") or ""),
+                className="cp-scenario__reply-summary",
+            ),
+            html.Div(
+                str(item.get("caption") or ""),
+                className="cp-scenario__reply-reasoning",
+            ),
+            html.Div(
+                [
+                    html.I(className="fas fa-lightbulb me-1"),
+                    str(item.get("key_insight") or ""),
+                ],
+                className="cp-annotation__insight",
+            ),
+        ]
+
+    if raw_metrics_block is not None:
+        children.append(raw_metrics_block)
+
+    meta_bits = []
+    if item.get("model"):
+        meta_bits.append(str(item.get("model")))
+    if isinstance(item.get("elapsed"), (int, float)):
+        meta_bits.append(f"{float(item['elapsed']):.1f}s")
+    if meta_bits:
+        children.append(html.Div(" · ".join(meta_bits), className="cp-scenario__message-meta"))
+
+    return html.Div(children, className="cp-annotation__analysis")
+
+
+def _build_annotation_card(item: dict[str, Any] | None):
+    """Render one responsive chart-preview plus annotation-result card."""
+    item = item or {}
+    preview_panel = html.Div(
+        [
+            html.Div(
+                str(item.get("chart_description") or ""),
+                className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
+            ),
+            html.Div(
+                dcc.Graph(
+                    figure=_build_annotation_preview_figure(item),
+                    config={
+                        "displayModeBar": False,
+                        "displaylogo": False,
+                        "responsive": True,
+                        "staticPlot": True,
+                    },
+                    className="cp-annotation__graph",
+                ),
+                className="cp-annotation__preview-shell",
+            ),
+        ],
+        className="cp-annotation__preview",
+    )
+
+    return card(
+        title=str(item.get("chart_label") or "Chart"),
+        subtitle=str(item.get("chart_subtitle") or ""),
+        header_right=_build_annotation_status_badges(item),
+        children=html.Div(
+            [
+                preview_panel,
+                _build_annotation_result_panel(item),
+            ],
+            className="cp-annotation__body",
+        ),
+        class_name="cp-annotation__card",
+    )
+
+
+def _build_annotations_output(annotation_state: dict[str, Any] | None):
+    """Render persisted annotation chart cards and their current interpretation status."""
+    state = _normalize_annotation_state(annotation_state)
+    status = state.get("status", "idle")
+    items = state.get("items") or []
+
+    if status == "idle":
+        return card(
+            title="Annotation Workspace",
+            subtitle="Run a simulation and annotate the current chart set",
+            children=[
+                html.Div(ANNOTATION_WORKFLOW_NOTE, className="cp-scenario__reply-reasoning cp-llm-inspector__prose"),
+                _scenario_placeholder(
+                    "Click Annotate All Charts to preview the exact dashboard plots that will be interpreted here."
+                ),
+            ],
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+        )
+
+    if status == "error" and not items:
+        return card(
+            title="Annotation Workspace",
+            subtitle="Visualization Annotator",
+            children=html.Div(
+                state.get("error") or "Unable to annotate the current charts.",
+                className="cp-scenario__reply-error",
+            ),
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+        )
+
+    summary_values = {
+        "current_step": state.get("current_step"),
+        "preset": str(state.get("preset", "custom")).replace("_", " ").title(),
+        "chart_count": len(items),
+        "model": state.get("model") or "—",
+    }
+    summary_badges = []
+    if status == "pending":
+        summary_badges.extend([
+            status_badge(f"{len(items)} charts queued", "info"),
+            status_badge("LLM thinking", "warning"),
+        ])
+    elif status == "error":
+        summary_badges.extend([
+            status_badge(f"{len(items)} charts processed", "warning"),
+            status_badge("Some annotations failed", "danger"),
+        ])
+    else:
+        summary_badges.extend([
+            status_badge(f"{len(items)} charts annotated", "success"),
+            status_badge("Prompt-grounded", "info"),
+        ])
+
+    return html.Div(
+        [
+            html.Div(summary_badges, className="d-flex gap-2 flex-wrap mb-3"),
+            _build_chat_context_grid(
+                summary_values,
+                [
+                    ("current_step", "Current Step"),
+                    ("preset", "Preset"),
+                    ("chart_count", "Charts"),
+                    ("model", "Model"),
+                ],
+                accent_first=True,
+            ),
+            html.Div(
+                str(state.get("note") or ANNOTATION_WORKFLOW_NOTE),
+                className="cp-scenario__reply-reasoning cp-annotation__summary-note cp-llm-inspector__prose",
+            ),
+            html.Div(
+                [_build_annotation_card(item) for item in items],
+                className="cp-annotation__list",
+            ),
+        ]
+    )
+
+
+def _build_audit_io_payloads(
+    call: dict[str, Any] | None,
+    *,
+    fallback_input: Any = None,
+    fallback_output: Any = None,
+) -> tuple[Any, Any]:
+    """Extract raw input/output payloads from an audit recorder call when available."""
+    input_payload = fallback_input
+    output_payload = fallback_output
+
+    if not isinstance(call, dict):
+        return input_payload, output_payload
+
+    call_input = {
+        "system_prompt": call.get("system_prompt"),
+        "user_prompt": call.get("user_prompt"),
+        "messages": call.get("messages"),
+        "think": call.get("think"),
+    }
+    call_input = {key: value for key, value in call_input.items() if value is not None}
+    if call_input:
+        input_payload = call_input
+
+    call_output = {
+        "raw_response": call.get("raw_response"),
+        "parsed_output": call.get("parsed_output"),
+        "schema_validation": call.get("schema_validation"),
+    }
+    call_output = {key: value for key, value in call_output.items() if value is not None}
+    if call_output:
+        output_payload = call_output
+
+    return input_payload, output_payload
+
+
+def _build_audit_log_table(log: list[dict[str, Any]] | None):
+    """Render the session audit entries as a compact table with inspect actions."""
+    entries = list(reversed(log or []))
+    rows = []
+    for index, entry in enumerate(entries):
+        status_class = "cp-badge cp-badge--success" if entry.get("status") == "success" \
+            else "cp-badge cp-badge--danger"
+        rows.append(
+            html.Tr([
+                html.Td(entry.get("timestamp", ""),
+                        style={"fontFamily": "var(--cp-font-mono)",
+                               "fontSize": "var(--cp-text-xs)"}),
+                html.Td(entry.get("role", ""),
+                        style={"fontSize": "var(--cp-text-sm)",
+                               "fontWeight": "var(--cp-weight-semibold)"}),
+                html.Td(entry.get("call_kind", ""),
+                        style={"fontSize": "var(--cp-text-xs)"}),
+                html.Td(entry.get("model", ""),
+                        style={"fontSize": "var(--cp-text-xs)",
+                               "fontFamily": "var(--cp-font-mono)"}),
+                html.Td(f"{entry.get('elapsed', 0):.1f}s",
+                        style={"fontSize": "var(--cp-text-xs)",
+                               "fontFamily": "var(--cp-font-mono)"}),
+                html.Td(html.Span(
+                    entry.get("status", ""),
+                    className=status_class,
+                )),
+                html.Td(entry.get("prompt_preview", ""),
+                        style={"fontSize": "var(--cp-text-xs)",
+                               "maxWidth": "240px", "overflow": "hidden",
+                               "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
+                html.Td(
+                    dbc.Button(
+                        [html.I(className="fas fa-search-plus me-1"), "Inspect"],
+                        id={"type": "audit-view-btn", "index": index},
+                        className="cp-btn-outline",
+                        size="sm",
+                    ),
+                    style={"whiteSpace": "nowrap"},
+                ),
+            ])
+        )
+
+    return dbc.Table(
+        [
+            html.Thead(html.Tr([
+                html.Th("Time"),
+                html.Th("Role"),
+                html.Th("Kind"),
+                html.Th("Model"),
+                html.Th("Time"),
+                html.Th("Status"),
+                html.Th("Prompt"),
+                html.Th("Inspect"),
+            ])),
+            html.Tbody(rows),
+        ],
+        bordered=True, hover=True, responsive=True, size="sm",
+        style={"fontSize": "var(--cp-text-sm)"},
+    )
+
+
+def _build_audit_detail(entry: dict[str, Any] | None):
+    """Render the inspector panel for one selected audit log entry."""
+    if not isinstance(entry, dict):
+        return card(
+            title="Interaction Details",
+            subtitle="Select any audit row to inspect the original request and response",
+            children=[
+                html.Div(
+                    AUDIT_LOG_DETAIL_NOTE,
+                    className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
+                ),
+                _scenario_placeholder(
+                    "Click Inspect on any row to review the original input and the original output for that LLM interaction."
+                ),
+            ],
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+        )
+
+    status = str(entry.get("status") or "unknown")
+    status_variant = "success" if status == "success" else "danger"
+    summary_values = {
+        "role": entry.get("role") or "—",
+        "kind": entry.get("call_kind") or "—",
+        "model": entry.get("model") or "—",
+        "timestamp": entry.get("timestamp") or "—",
+        "elapsed": f"{float(entry.get('elapsed', 0.0)):.1f}s",
+        "status": status.title(),
+    }
+    input_payload = entry.get("input_payload")
+    output_payload = entry.get("output_payload")
+    if output_payload is None and entry.get("error"):
+        output_payload = {"error": entry.get("error")}
+
+    input_block = _build_scenario_raw_output(
+        input_payload,
+        summary_text="View Original Input",
+    )
+    output_block = _build_scenario_raw_output(
+        output_payload,
+        summary_text="View Original Output",
+    )
+
+    children = [
+        html.Div(
+            [
+                status_badge(entry.get("role", "LLM"), "primary"),
+                status_badge(summary_values["status"], status_variant),
+            ],
+            className="d-flex gap-2 flex-wrap mb-3",
+        ),
+        _build_chat_context_grid(
+            summary_values,
+            [
+                ("role", "Role"),
+                ("kind", "Kind"),
+                ("model", "Model"),
+                ("timestamp", "Time"),
+                ("elapsed", "Elapsed"),
+                ("status", "Status"),
+            ],
+            accent_first=True,
+        ),
+        html.Div(
+            AUDIT_LOG_DETAIL_NOTE,
+            className="cp-scenario__reply-reasoning cp-annotation__summary-note cp-llm-inspector__prose",
+        ),
+        html.Div("Original Input", className="cp-scenario__section-label"),
+    ]
+
+    if input_block is not None:
+        children.append(input_block)
+    else:
+        children.append(
+            html.Div("No original input payload was captured for this entry.", className="cp-scenario__reply-reasoning")
+        )
+
+    children.append(html.Div("Original Output", className="cp-scenario__section-label"))
+    if output_block is not None:
+        children.append(output_block)
+    else:
+        children.append(
+            html.Div("No original output payload was captured for this entry.", className="cp-scenario__reply-reasoning")
+        )
+
+    if entry.get("error"):
+        children.append(
+            html.Div(
+                f"Captured error: {entry.get('error')}",
+                className="cp-scenario__reply-error",
+            )
+        )
+
+    return card(
+        title="Interaction Details",
+        subtitle=str(entry.get("prompt_preview") or entry.get("call_kind") or "LLM call"),
+        children=children,
+        class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+    )
 
 
 def _build_chat_thread(chat_state: dict[str, Any] | None):
@@ -2011,6 +2756,7 @@ def _tab_profile() -> html.Div:
 def _tab_annotations() -> html.Div:
     """Role 4: Visualization Annotator — auto-generate chart captions."""
     return html.Div([
+        _build_annotations_intro(),
         html.Div([
             dbc.Button(
                 [html.I(className="fas fa-pen-fancy me-1"), "Annotate All Charts"],
@@ -2024,7 +2770,7 @@ def _tab_annotations() -> html.Div:
                 className="cp-btn-outline",
                 size="sm",
             ),
-        ], className="d-flex align-items-center gap-2 flex-wrap mb-3"),
+        ], className="cp-scenario__composer-actions mb-3"),
         html.Div(id="annotations-output"),
     ], className="p-3")
 
@@ -2080,6 +2826,7 @@ def _tab_forums() -> html.Div:
 def _tab_audit() -> html.Div:
     """Audit log viewer for all LLM interactions during this session."""
     return html.Div([
+        _build_audit_intro(),
         html.Div([
             dbc.Button(
                 [html.I(className="fas fa-sync-alt me-1"), "Refresh Log"],
@@ -2093,8 +2840,9 @@ def _tab_audit() -> html.Div:
                 className="cp-btn-outline",
                 size="sm",
             ),
-        ], className="d-flex mb-3"),
+        ], className="cp-scenario__composer-actions mb-3"),
         html.Div(id="audit-log-content"),
+        html.Div(id="audit-log-detail", className="mt-3"),
     ], className="p-3")
 
 
@@ -2136,7 +2884,9 @@ def layout() -> html.Div:
 
 def _record_audit(role: str, call_kind: str, model: str,
                   prompt_preview: str, result: Any,
-                  elapsed: float, error: str | None = None) -> None:
+                  elapsed: float, error: str | None = None,
+                  input_payload: Any = None,
+                  output_payload: Any = None) -> None:
     """Add a lightweight audit entry to the session log."""
     app_state.append_audit_entry({
         "timestamp": datetime.now().strftime("%H:%M:%S"),
@@ -2148,6 +2898,8 @@ def _record_audit(role: str, call_kind: str, model: str,
         "elapsed": round(elapsed, 2),
         "status": "error" if error else "success",
         "error": error,
+        "input_payload": make_json_safe(input_payload) if input_payload is not None else None,
+        "output_payload": make_json_safe(output_payload) if output_payload is not None else None,
     })
 
 
@@ -2400,9 +3152,23 @@ def resolve_scenario_request(request, store_data):
         result = parse_scenario(description, model=model_name, recorder=recorder)
         elapsed = time.perf_counter() - t0
         role_calls = recorder.get_calls("role_1")
-        raw_response = role_calls[-1].get("raw_response") if role_calls else None
-        _record_audit("Role 1", "scenario_parser", model_name,
-                      description, result, elapsed)
+        role_call = role_calls[-1] if role_calls else None
+        raw_response = role_call.get("raw_response") if role_call else None
+        input_payload, output_payload = _build_audit_io_payloads(
+            role_call,
+            fallback_input={"description": description},
+            fallback_output=result,
+        )
+        _record_audit(
+            "Role 1",
+            "scenario_parser",
+            model_name,
+            description,
+            result,
+            elapsed,
+            input_payload=input_payload,
+            output_payload=output_payload,
+        )
         recorder.write_role_artifact(
             role="role_1",
             filename=f"{request_id}_scenario_parser_ui.json",
@@ -2423,9 +3189,24 @@ def resolve_scenario_request(request, store_data):
     except Exception as e:
         elapsed = time.perf_counter() - t0
         role_calls = recorder.get_calls("role_1")
-        raw_response = role_calls[-1].get("raw_response") if role_calls else None
-        _record_audit("Role 1", "scenario_parser", model_name,
-                      description, None, elapsed, str(e))
+        role_call = role_calls[-1] if role_calls else None
+        raw_response = role_call.get("raw_response") if role_call else None
+        input_payload, output_payload = _build_audit_io_payloads(
+            role_call,
+            fallback_input={"description": description},
+            fallback_output={"error": str(e)},
+        )
+        _record_audit(
+            "Role 1",
+            "scenario_parser",
+            model_name,
+            description,
+            None,
+            elapsed,
+            str(e),
+            input_payload=input_payload,
+            output_payload=output_payload,
+        )
         try:
             recorder.write_role_artifact(
                 role="role_1",
@@ -2632,8 +3413,27 @@ def resolve_chat_request(request, chat_data):
         )
         elapsed = time.perf_counter() - t0
         role_calls = recorder.get_calls("role_3")
-        raw_response = role_calls[-1].get("raw_response") if role_calls else None
-        _record_audit("Role 3", "result_interpreter", model_name, question, result, elapsed)
+        role_call = role_calls[-1] if role_calls else None
+        raw_response = role_call.get("raw_response") if role_call else None
+        input_payload, output_payload = _build_audit_io_payloads(
+            role_call,
+            fallback_input={
+                "question": question,
+                "context": context_snapshot,
+                "history": history_for_llm,
+            },
+            fallback_output=result,
+        )
+        _record_audit(
+            "Role 3",
+            "result_interpreter",
+            model_name,
+            question,
+            result,
+            elapsed,
+            input_payload=input_payload,
+            output_payload=output_payload,
+        )
         recorder.write_role_artifact(
             role="role_3",
             filename=f"{request_id}_result_interpreter_ui.json",
@@ -2656,8 +3456,28 @@ def resolve_chat_request(request, chat_data):
     except Exception as e:
         elapsed = time.perf_counter() - t0
         role_calls = recorder.get_calls("role_3")
-        raw_response = role_calls[-1].get("raw_response") if role_calls else None
-        _record_audit("Role 3", "result_interpreter", model_name, question, None, elapsed, str(e))
+        role_call = role_calls[-1] if role_calls else None
+        raw_response = role_call.get("raw_response") if role_call else None
+        input_payload, output_payload = _build_audit_io_payloads(
+            role_call,
+            fallback_input={
+                "question": question,
+                "context": context_snapshot,
+                "history": history_for_llm,
+            },
+            fallback_output={"error": str(e)},
+        )
+        _record_audit(
+            "Role 3",
+            "result_interpreter",
+            model_name,
+            question,
+            None,
+            elapsed,
+            str(e),
+            input_payload=input_payload,
+            output_payload=output_payload,
+        )
         try:
             recorder.write_role_artifact(
                 role="role_3",
@@ -2863,8 +3683,23 @@ def resolve_profile_request(request, profile_data):
         result = generate_agent_profile(description, model=model_name, recorder=recorder)
         elapsed = time.perf_counter() - t0
         role_calls = recorder.get_calls("role_2")
-        raw_response = role_calls[-1].get("raw_response") if role_calls else None
-        _record_audit("Role 2", "profile_generator", model_name, description, result, elapsed)
+        role_call = role_calls[-1] if role_calls else None
+        raw_response = role_call.get("raw_response") if role_call else None
+        input_payload, output_payload = _build_audit_io_payloads(
+            role_call,
+            fallback_input={"description": description},
+            fallback_output=result,
+        )
+        _record_audit(
+            "Role 2",
+            "profile_generator",
+            model_name,
+            description,
+            result,
+            elapsed,
+            input_payload=input_payload,
+            output_payload=output_payload,
+        )
         recorder.write_role_artifact(
             role="role_2",
             filename=f"{request_id}_profile_generator_ui.json",
@@ -2885,8 +3720,24 @@ def resolve_profile_request(request, profile_data):
     except Exception as e:
         elapsed = time.perf_counter() - t0
         role_calls = recorder.get_calls("role_2")
-        raw_response = role_calls[-1].get("raw_response") if role_calls else None
-        _record_audit("Role 2", "profile_generator", model_name, description, None, elapsed, str(e))
+        role_call = role_calls[-1] if role_calls else None
+        raw_response = role_call.get("raw_response") if role_call else None
+        input_payload, output_payload = _build_audit_io_payloads(
+            role_call,
+            fallback_input={"description": description},
+            fallback_output={"error": str(e)},
+        )
+        _record_audit(
+            "Role 2",
+            "profile_generator",
+            model_name,
+            description,
+            None,
+            elapsed,
+            str(e),
+            input_payload=input_payload,
+            output_payload=output_payload,
+        )
         try:
             recorder.write_role_artifact(
                 role="role_2",
@@ -2958,16 +3809,9 @@ clientside_callback(
 # Callback 7: Annotations (Role 4)
 # =========================================================================
 
-ANNOTATABLE_CHARTS = [
-    ("total_labor_hours", "Total Labor Hours (H1)"),
-    ("stress_delegation", "Stress & Delegation (H2/H3)"),
-    ("social_efficiency", "Social Efficiency (H2)"),
-    ("market_health", "Market Health"),
-]
-
-
 @callback(
     Output("annotation-history-store", "data", allow_duplicate=True),
+    Output("annotation-annotate-request-store", "data"),
     Input("btn-annotate-charts", "n_clicks"),
     State("annotation-history-store", "data"),
     prevent_initial_call=True,
@@ -2977,88 +3821,169 @@ ANNOTATABLE_CHARTS = [
     ],
 )
 def annotate_charts_cb(n_clicks, annotation_data):
+    """Stage chart previews and pending statuses before Role 4 returns."""
     state = _normalize_annotation_state(annotation_data)
+    if state.get("status") == "pending":
+        return no_update, no_update
+
     current_clicks = int(n_clicks or 0)
     if current_clicks <= state.get("last_annotate_clicks", 0):
-        return no_update
+        return no_update, no_update
 
     state["last_annotate_clicks"] = current_clicks
-    sim_model = app_state.get_model()
-    if sim_model is None or sim_model.current_step == 0:
+    snapshot = _build_annotation_snapshot()
+    if not snapshot.get("initialized"):
         state.update({
             "status": "error",
-            "error": "Initialize and run a simulation first.",
+            "error": str(snapshot.get("note") or "Initialize and run a simulation first."),
+            "note": str(snapshot.get("note") or ANNOTATION_WORKFLOW_NOTE),
+            "current_step": int(snapshot.get("current_step") or 0),
+            "preset": str(snapshot.get("preset") or "custom"),
+            "model": snapshot.get("model"),
+            "items": [],
         })
-        return state
+        return state, None
+
+    state.update({
+        "status": "pending",
+        "error": None,
+        "note": str(snapshot.get("note") or ANNOTATION_WORKFLOW_NOTE),
+        "current_step": int(snapshot.get("current_step") or 0),
+        "preset": str(snapshot.get("preset") or "custom"),
+        "model": snapshot.get("model"),
+        "request_id": _make_request_id(),
+        "items": snapshot.get("items", []),
+        "generated_at": None,
+    })
+    request = {
+        "request_id": state.get("request_id"),
+        "model": snapshot.get("model"),
+        "preset": snapshot.get("preset"),
+        "items": [
+            {
+                "chart_key": item.get("chart_key"),
+                "chart_label": item.get("chart_label"),
+                "metrics": item.get("metrics"),
+            }
+            for item in snapshot.get("items", [])
+        ],
+    }
+    return state, request
+
+
+@callback(
+    Output("annotation-history-store", "data", allow_duplicate=True),
+    Output("annotation-annotate-request-store", "data", allow_duplicate=True),
+    Input("annotation-annotate-request-store", "data"),
+    State("annotation-history-store", "data"),
+    prevent_initial_call=True,
+    running=[
+        (Output("btn-annotate-charts", "disabled"), True, False),
+    ],
+)
+def resolve_annotation_request(request, annotation_data):
+    """Run Role 4 on each staged chart and fill in the final annotations."""
+    if not request:
+        return no_update, no_update
 
     import time
     from api.llm_service import annotate_visualization
-    model_name = app_state.get_role_model("role_4")
-    df = sim_model.get_model_dataframe()
 
-    items = []
-    for chart_key, chart_label in ANNOTATABLE_CHARTS:
-        col_map = {
-            "total_labor_hours": "total_labor_hours",
-            "stress_delegation": "avg_stress",
-            "social_efficiency": "social_efficiency",
-            "market_health": "unmatched_tasks",
-        }
-        col = col_map.get(chart_key, chart_key)
-        if col in df.columns:
-            series = df[col]
-            metrics = {
-                "min": round(float(series.min()), 4),
-                "max": round(float(series.max()), 4),
-                "mean": round(float(series.mean()), 4),
-                "last": round(float(series.iloc[-1]), 4),
-                "trend": "rising" if series.iloc[-1] > series.iloc[0] else "falling",
-                "steps": len(series),
-            }
-        else:
-            metrics = {"note": "Column not found"}
+    state = _normalize_annotation_state(annotation_data)
+    request_id = request.get("request_id")
+    # Ignore stale work once the active annotation session has been cleared
+    # or superseded by a newer request.
+    if request_id != state.get("request_id"):
+        return no_update, no_update
 
+    model_name = request.get("model") or state.get("model") or app_state.get_role_model("role_4")
+    preset = request.get("preset")
+    results_by_key = {}
+
+    for queued_item in request.get("items", []):
+        chart_key = str(queued_item.get("chart_key") or "")
+        chart_label = str(queued_item.get("chart_label") or chart_key or "Chart")
+        metrics = queued_item.get("metrics") or {}
         t0 = time.perf_counter()
         try:
             result = annotate_visualization(
-                chart_label, metrics, model=model_name,
+                chart_label,
+                metrics,
+                preset=preset,
+                model=model_name,
             )
             elapsed = time.perf_counter() - t0
-            _record_audit("Role 4", "visualization_annotator", model_name,
-                          chart_label, result, elapsed)
-
-            items.append({
-                "chart_key": chart_key,
-                "chart_label": chart_label,
+            _record_audit(
+                "Role 4",
+                "visualization_annotator",
+                model_name,
+                chart_label,
+                result,
+                elapsed,
+                input_payload={
+                    "chart_label": chart_label,
+                    "preset": preset,
+                    "metrics": metrics,
+                },
+                output_payload=result,
+            )
+            results_by_key[chart_key] = {
+                "status": "success",
                 "chart_title": result.get("chart_title", chart_label),
                 "hypothesis_tag": result.get("hypothesis_tag", ""),
                 "caption": result.get("caption", ""),
                 "key_insight": result.get("key_insight", ""),
                 "elapsed": elapsed,
                 "model": model_name,
-            })
+                "error": None,
+            }
         except Exception as e:
             elapsed = time.perf_counter() - t0
-            _record_audit("Role 4", "visualization_annotator", model_name,
-                          chart_label, None, elapsed, str(e))
-            items.append({
-                "chart_key": chart_key,
-                "chart_label": chart_label,
-                "error": f"Error: {e}",
+            _record_audit(
+                "Role 4",
+                "visualization_annotator",
+                model_name,
+                chart_label,
+                None,
+                elapsed,
+                str(e),
+                input_payload={
+                    "chart_label": chart_label,
+                    "preset": preset,
+                    "metrics": metrics,
+                },
+                output_payload={"error": str(e)},
+            )
+            results_by_key[chart_key] = {
+                "status": "error",
                 "elapsed": elapsed,
                 "model": model_name,
-            })
+                "error": f"Error: {e}",
+            }
+
+    updated_items = []
+    had_error = False
+    for item in state.get("items", []):
+        chart_key = str(item.get("chart_key") or "")
+        result_payload = results_by_key.get(chart_key, {})
+        item_state = dict(item)
+        item_state.update(result_payload)
+        if item_state.get("status") == "error":
+            had_error = True
+        updated_items.append(item_state)
 
     state.update({
-        "status": "success",
-        "items": items,
+        "status": "success" if not had_error else "error",
+        "error": None if not had_error else "One or more charts could not be annotated.",
+        "items": updated_items,
         "generated_at": datetime.now().isoformat(),
     })
-    return state
+    return state, None
 
 
 @callback(
     Output("annotation-history-store", "data", allow_duplicate=True),
+    Output("annotation-annotate-request-store", "data", allow_duplicate=True),
     Input("btn-clear-annotations", "n_clicks"),
     State("annotation-history-store", "data"),
     prevent_initial_call=True,
@@ -3068,12 +3993,12 @@ def clear_annotations_cb(n_clicks, annotation_data):
     state = _normalize_annotation_state(annotation_data)
     current_clicks = int(n_clicks or 0)
     if current_clicks <= state.get("last_clear_clicks", 0):
-        return no_update
+        return no_update, no_update
 
     reset_state = _default_annotation_state()
     reset_state["last_annotate_clicks"] = state.get("last_annotate_clicks", 0)
     reset_state["last_clear_clicks"] = current_clicks
-    return reset_state
+    return reset_state, None
 
 
 @callback(
@@ -3120,10 +4045,21 @@ def run_forum_cb(n_clicks, fraction, group_size, num_turns):
         )
         elapsed = time.perf_counter() - t0
         session_data = format_session_for_api(session)
-        _record_audit("Role 5", "agent_forums", model_name,
-                      f"fraction={fraction}, groups={group_size}",
-                      f"{len(session_data.get('groups', []))} groups",
-                      elapsed)
+        _record_audit(
+            "Role 5",
+            "agent_forums",
+            model_name,
+            f"fraction={fraction}, groups={group_size}",
+            f"{len(session_data.get('groups', []))} groups",
+            elapsed,
+            input_payload={
+                "forum_fraction": fraction or 0.20,
+                "group_size": group_size or 2,
+                "num_turns": num_turns or 2,
+                "model": model_name,
+            },
+            output_payload=session_data,
+        )
 
         group_cards = []
         for gi, group in enumerate(session_data.get("groups", [])):
@@ -3201,8 +4137,22 @@ def run_forum_cb(n_clicks, fraction, group_size, num_turns):
         ])
     except Exception as e:
         elapsed = time.perf_counter() - t0
-        _record_audit("Role 5", "agent_forums", model_name,
-                      f"fraction={fraction}", None, elapsed, str(e))
+        _record_audit(
+            "Role 5",
+            "agent_forums",
+            model_name,
+            f"fraction={fraction}",
+            None,
+            elapsed,
+            str(e),
+            input_payload={
+                "forum_fraction": fraction or 0.20,
+                "group_size": group_size or 2,
+                "num_turns": num_turns or 2,
+                "model": model_name,
+            },
+            output_payload={"error": str(e)},
+        )
         return html.Div(
             f"Error: {e}",
             style={"color": "var(--cp-danger)", "fontSize": "var(--cp-text-sm)"},
@@ -3215,70 +4165,66 @@ def run_forum_cb(n_clicks, fraction, group_size, num_turns):
 
 @callback(
     Output("audit-log-content", "children"),
+    Output("audit-trigger-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
     Input("btn-refresh-audit", "n_clicks"),
     Input("btn-clear-audit", "n_clicks"),
-    prevent_initial_call=True,
 )
-def update_audit_log(n_refresh, n_clear):
+def update_audit_log(page_state, n_refresh, n_clear):
     triggered = ctx.triggered_id
     if triggered == "btn-clear-audit":
         app_state.clear_audit_log()
-        return html.Div(
-            "Audit log cleared.",
-            style={"color": "var(--cp-text-tertiary)",
-                   "fontSize": "var(--cp-text-sm)", "textAlign": "center",
-                   "padding": "var(--cp-space-8)"},
+        return (
+            html.Div(
+                "Audit log cleared.",
+                style={"color": "var(--cp-text-tertiary)",
+                       "fontSize": "var(--cp-text-sm)", "textAlign": "center",
+                       "padding": "var(--cp-space-8)"},
+            ),
+            [],
         )
 
     log = app_state.get_audit_log()
     if not log:
-        return html.Div(
-            "No LLM calls recorded in this session. Use any role above to generate entries.",
-            style={"color": "var(--cp-text-tertiary)",
-                   "fontSize": "var(--cp-text-sm)", "textAlign": "center",
-                   "padding": "var(--cp-space-8)"},
+        return (
+            html.Div(
+                "No LLM calls recorded in this session. Use any role above to generate entries.",
+                style={"color": "var(--cp-text-tertiary)",
+                       "fontSize": "var(--cp-text-sm)", "textAlign": "center",
+                       "padding": "var(--cp-space-8)"},
+            ),
+            [],
         )
 
-    rows = []
-    for entry in reversed(log):
-        status_class = "cp-badge cp-badge--success" if entry.get("status") == "success" \
-            else "cp-badge cp-badge--danger"
-        rows.append(
-            html.Tr([
-                html.Td(entry.get("timestamp", ""),
-                        style={"fontFamily": "var(--cp-font-mono)",
-                               "fontSize": "var(--cp-text-xs)"}),
-                html.Td(entry.get("role", ""),
-                        style={"fontSize": "var(--cp-text-sm)",
-                               "fontWeight": "var(--cp-weight-semibold)"}),
-                html.Td(entry.get("call_kind", ""),
-                        style={"fontSize": "var(--cp-text-xs)"}),
-                html.Td(entry.get("model", ""),
-                        style={"fontSize": "var(--cp-text-xs)",
-                               "fontFamily": "var(--cp-font-mono)"}),
-                html.Td(f"{entry.get('elapsed', 0):.1f}s",
-                        style={"fontSize": "var(--cp-text-xs)",
-                               "fontFamily": "var(--cp-font-mono)"}),
-                html.Td(html.Span(
-                    entry.get("status", ""),
-                    className=status_class,
-                )),
-                html.Td(entry.get("prompt_preview", ""),
-                        style={"fontSize": "var(--cp-text-xs)",
-                               "maxWidth": "200px", "overflow": "hidden",
-                               "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
-            ])
-        )
+    entries = list(reversed(log))
+    return _build_audit_log_table(log), entries
 
-    return dbc.Table(
-        [
-            html.Thead(html.Tr([
-                html.Th("Time"), html.Th("Role"), html.Th("Kind"),
-                html.Th("Model"), html.Th("Time"), html.Th("Status"),
-                html.Th("Prompt"),
-            ])),
-            html.Tbody(rows),
-        ],
-        bordered=True, hover=True, responsive=True, size="sm",
-        style={"fontSize": "var(--cp-text-sm)"},
-    )
+
+@callback(
+    Output("audit-log-detail", "children"),
+    Input({"type": "audit-view-btn", "index": ALL}, "n_clicks"),
+    Input("llm-studio-mount-interval", "n_intervals"),
+    Input("btn-refresh-audit", "n_clicks"),
+    Input("btn-clear-audit", "n_clicks"),
+    State("audit-trigger-store", "data"),
+)
+def update_audit_detail(_view_clicks, page_state, n_refresh, n_clear, rendered_entries):
+    """Render the selected audit entry below the log table."""
+    triggered = ctx.triggered_id
+    if triggered is None:
+        return _build_audit_detail(None)
+    if triggered == "llm-studio-mount-interval":
+        return _build_audit_detail(None)
+    if triggered == "btn-refresh-audit":
+        return _build_audit_detail(None)
+    if triggered == "btn-clear-audit":
+        return _build_audit_detail(None)
+
+    if isinstance(triggered, dict) and triggered.get("type") == "audit-view-btn":
+        entries = rendered_entries if isinstance(rendered_entries, list) else []
+        raw_index = triggered.get("index")
+        index = int(raw_index) if raw_index is not None else -1
+        if 0 <= index < len(entries):
+            return _build_audit_detail(entries[index])
+
+    return _build_audit_detail(None)

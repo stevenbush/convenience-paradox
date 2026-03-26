@@ -83,8 +83,13 @@ def _build_layout() -> html.Div:
             # Visualization Annotator UI state — survives in-app navigation only.
             dcc.Store(id="annotation-history-store", data={}, storage_type="memory"),
 
-            # LLM audit log trigger — updated after each LLM call
-            dcc.Store(id="audit-trigger-store", data=0),
+            # Visualization Annotator request queue — used to show pending chart states
+            # before the LLM returns chart-by-chart annotations.
+            dcc.Store(id="annotation-annotate-request-store", data=None),
+
+            # LLM audit table snapshot — keeps the detail panel aligned with the
+            # rows currently rendered in the Audit Log table.
+            dcc.Store(id="audit-trigger-store", data=[]),
 
             topbar(),
 
