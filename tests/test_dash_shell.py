@@ -86,6 +86,17 @@ def test_app_layout_exposes_session_store_for_llm_studio() -> None:
         if isinstance(child, dcc.Store) and child.id == "chat-interpret-request-store"
     )
     assert chat_queue.data is None
+    profile_store = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "profile-history-store"
+    )
+    assert profile_store.storage_type == "session"
+    assert profile_store.data == {}
+    profile_queue = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "profile-generate-request-store"
+    )
+    assert profile_queue.data is None
 
 
 def test_llm_studio_parser_input_uses_session_persistence() -> None:
@@ -142,6 +153,41 @@ def test_llm_studio_chat_tab_uses_conversation_layout() -> None:
     assert textarea.submit_on_enter is True
     assert actions.children[0].id == "btn-chat-send"
     assert actions.children[1].id == "btn-clear-chat"
+
+
+def test_llm_studio_profile_tab_uses_conversation_layout() -> None:
+    """Profile Generator should mirror the Scenario Parser conversation layout."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    profile_tab = llm_studio._tab_profile()
+    intro = profile_tab.children[0]
+    workspace_row = profile_tab.children[1]
+    conversation_col = workspace_row.children[0]
+    conversation_card = conversation_col.children[0]
+    card_body = conversation_card.children[1]
+    textarea = card_body.children[1].children[0]
+    actions = card_body.children[1].children[1]
+    prompt_strip = intro.children[2]
+    prompt_row = prompt_strip.children[1]
+
+    assert intro.className == "cp-scenario-guide"
+    assert "cp-llm-workspace" in workspace_row.className
+    assert "cp-llm-workspace__col" in conversation_col.className
+    assert "cp-llm-workspace__card--conversation" in conversation_card.className
+    assert prompt_strip.className == "cp-profile__prompt-strip"
+    assert prompt_row.className == "cp-profile__prompt-row"
+    assert prompt_row.children[0].id == "btn-profile-prompt-busy"
+    assert prompt_row.children[1].id == "btn-profile-prompt-self-serve"
+    assert prompt_row.children[2].id == "btn-profile-prompt-coordinator"
+    assert card_body.children[0].id == "profile-thread"
+    assert textarea.id == "profile-input"
+    assert textarea.persistence is True
+    assert textarea.persistence_type == "session"
+    assert textarea.submit_on_enter is True
+    assert actions.children[0].id == "btn-generate-profile"
+    assert actions.children[1].id == "btn-clear-profile"
+    assert actions.children[1].children[1] == "Clear Conversation"
 
 
 def test_model_configuration_is_collapsed_by_default() -> None:
@@ -303,6 +349,37 @@ def test_llm_studio_stages_pending_chat_request() -> None:
     assert chat_state["history"][1]["status"] == "pending"
 
 
+def test_llm_studio_stages_pending_profile_request() -> None:
+    """Submitting a profile description should create a user turn and pending generator turn."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    state = llm_studio._stage_profile_request(
+        {},
+        "A busy dual-income household that outsources chores but handles paperwork well.",
+        "qwen3.5:4b",
+        "profile-1",
+    )
+
+    profile_state = llm_studio._normalize_profile_state(state)
+    assert profile_state["status"] == "pending"
+    assert profile_state["request_id"] == "profile-1"
+    assert len(profile_state["history"]) == 2
+    assert profile_state["history"][0]["role"] == "user"
+    assert profile_state["history"][1]["status"] == "pending"
+
+
+def test_llm_studio_profile_prompt_map_returns_expected_text() -> None:
+    """Suggested prompt buttons should map to full profile descriptions."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    assert "time-constrained professional" in llm_studio._profile_prompt_text("btn-profile-prompt-busy")
+    assert "self-reliant resident" in llm_studio._profile_prompt_text("btn-profile-prompt-self-serve")
+    assert "household coordinator" in llm_studio._profile_prompt_text("btn-profile-prompt-coordinator")
+    assert llm_studio._profile_prompt_text("btn-profile-prompt-missing") is None
+
+
 def test_llm_studio_chat_context_panel_shows_current_snapshot() -> None:
     """Chat Interpreter should show the grounded simulation snapshot being interpreted."""
     create_app()
@@ -375,6 +452,65 @@ def test_llm_studio_chat_context_panel_shows_current_snapshot() -> None:
     assert "context JSON" in body.children[8].children[0].children
 
 
+def test_llm_studio_profile_output_shows_generated_agent_type() -> None:
+    """Profile Generator inspector should show summary, skills, and parameter meanings."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    pending_state = llm_studio._stage_profile_request(
+        {},
+        "A time-constrained professional who outsources chores but manages admin tasks well.",
+        "qwen3.5:4b",
+        "profile-ready",
+    )
+    store_data = llm_studio._complete_profile_request(
+        pending_state,
+        "profile-ready",
+        "qwen3.5:4b",
+        1.2,
+        result={
+            "profile_description": "A service-comfortable professional who saves time by outsourcing home tasks.",
+            "delegation_preference": 0.72,
+            "skill_domestic": 0.41,
+            "skill_administrative": 0.78,
+            "skill_errand": 0.65,
+            "skill_maintenance": 0.38,
+        },
+        raw_response='{"profile_description":"A service-comfortable professional who saves time by outsourcing home tasks."}',
+    )
+
+    profile_state = llm_studio._normalize_profile_state(store_data)
+    thread = llm_studio._build_profile_thread(profile_state)
+    panel = llm_studio._build_profile_output(profile_state)
+
+    assert thread.className == "cp-chat"
+    assert "cp-card" in panel.className
+    assert "cp-llm-workspace__card--inspector" in panel.className
+
+    header = panel.children[0]
+    title_wrap = header.children[0]
+    assert title_wrap.children[0].children == "Generated Agent Type"
+    assert title_wrap.children[1].children == "1.2s · qwen3.5:4b"
+
+    body = panel.children[1]
+    assert body.children[1].children == "Agent Type Summary"
+    assert "service-comfortable professional" in body.children[2].children
+    summary_grid = body.children[3]
+    assert summary_grid.className == "cp-chat-context__grid"
+    assert summary_grid.children[0].children[0].children == "Delegation Style"
+    assert body.children[4].children == "Skill Profile"
+    assert "Graph" in type(body.children[5].children[0].children).__name__
+    assert body.children[6].children == "Parameter Breakdown"
+    param_grid = body.children[7]
+    assert param_grid.className == "cp-chat-context__grid"
+    assert param_grid.children[0].children[0].children == "Delegation Preference"
+    assert "outsource tasks" in param_grid.children[0].children[2].children
+    assert body.children[8].children == "How To Use This Agent Type"
+    assert "simulation-ready agent type" in body.children[9].children
+    assert body.children[10].children == "Raw LLM Output"
+    assert "raw profile JSON" in body.children[11].children[0].children
+
+
 def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:
     """Stored LLM Studio state should rebuild the active tab, transcript, and inspector."""
     create_app()
@@ -421,11 +557,12 @@ def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:
     assert body.children[1].children == (
         "Residents mostly self-serve and delegate only when busy."
     )
-    table = body.children[4]
-    first_row = table.children.children[0]
-    assert first_row.children[0].children == "Delegation Preference Mean"
-    assert first_row.children[1].children[0].children == "0.1"
-    assert first_row.children[1].children[1].children == "LLM-derived"
+    param_grid = body.children[4]
+    assert param_grid.className == "cp-chat-context__grid"
+    first_chip = param_grid.children[0]
+    assert first_chip.children[0].children[0].children == "Delegation Preference Mean"
+    assert first_chip.children[0].children[1].children == "LLM-derived"
+    assert first_chip.children[1].children == "0.1"
     assert body.children[6].children.startswith("These values map directly")
     assert "raw LLM JSON" in body.children[8].children[0].children
 

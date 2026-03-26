@@ -73,6 +73,12 @@ def _build_layout() -> html.Div:
             # Result Interpreter UI state — persisted across page navigation in this browser tab.
             dcc.Store(id="chat-history-store", data={}, storage_type="session"),
 
+            # Profile Generator request queue — used to show a pending state before the LLM returns.
+            dcc.Store(id="profile-generate-request-store", data=None),
+
+            # Profile Generator UI state — persisted across page navigation in this browser tab.
+            dcc.Store(id="profile-history-store", data={}, storage_type="session"),
+
             # LLM audit log trigger — updated after each LLM call
             dcc.Store(id="audit-trigger-store", data=0),
 

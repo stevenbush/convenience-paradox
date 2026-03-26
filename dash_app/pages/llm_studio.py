@@ -30,7 +30,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from dash import html, dcc, callback, clientside_callback, Input, Output, State, ctx, no_update
 
-from api.schemas import SimulationParams
+from api.schemas import SimulationParams, AgentProfileOutput
 from dash_app.components.card import card
 from dash_app.components.badges import status_badge, llm_status_dot
 from dash_app.components.charts import CHART_COLORWAY
@@ -107,6 +107,76 @@ CHAT_CONTEXT_PARAMS = [
     ("num_agents", "Num Agents"),
     ("network_type", "Network"),
 ]
+
+PROFILE_PARAM_FIELDS = [
+    ("delegation_preference", "Delegation Preference"),
+    ("skill_domestic", "Domestic Skill"),
+    ("skill_administrative", "Administrative Skill"),
+    ("skill_errand", "Errand Skill"),
+    ("skill_maintenance", "Maintenance Skill"),
+]
+
+PROFILE_PARAM_HELP = {
+    "delegation_preference": (
+        "Higher values mean this agent type is more likely to outsource tasks "
+        "instead of handling them alone."
+    ),
+    "skill_domestic": (
+        "Comfort with cooking, cleaning, and day-to-day household management."
+    ),
+    "skill_administrative": (
+        "Capability for paperwork, scheduling, and routine coordination tasks."
+    ),
+    "skill_errand": (
+        "Capability for shopping, delivery pickup, and other outside errands."
+    ),
+    "skill_maintenance": (
+        "Capability for repairs, DIY, and technical upkeep around the home."
+    ),
+}
+
+PROFILE_DESCRIPTION_EXAMPLE = (
+    "A time-constrained professional who is comfortable using paid services. "
+    "They can handle scheduling and errands fairly well, but prefer to outsource "
+    "household chores and small repairs when work becomes intense."
+)
+
+PROFILE_SUGGESTED_PROMPTS = [
+    (
+        "btn-profile-prompt-busy",
+        "Busy Service User",
+        (
+            "A time-constrained professional who is comfortable using paid services. "
+            "They handle scheduling and errands fairly well, but prefer to outsource "
+            "household chores and small repairs during intense work periods."
+        ),
+    ),
+    (
+        "btn-profile-prompt-self-serve",
+        "Self-Reliant Resident",
+        (
+            "A self-reliant resident who values autonomy and usually handles household "
+            "tasks personally. They are comfortable with cooking, cleaning, errands, "
+            "and minor repairs, and only outsource when deadlines become extreme."
+        ),
+    ),
+    (
+        "btn-profile-prompt-coordinator",
+        "Household Coordinator",
+        (
+            "A household coordinator who keeps track of schedules, errands, and family "
+            "logistics. They are strong at administrative work and daily errands, but "
+            "delegate cleaning or repair work when the week becomes overloaded."
+        ),
+    ),
+]
+
+PROFILE_NEXT_STEP_GUIDANCE = (
+    "Use this as one simulation-ready agent type. Delegation Preference controls "
+    "how often the archetype outsources tasks, while the four skill values shape "
+    "how capable the agent is at self-serving across task domains. Generate a few "
+    "contrasting profiles to create a more heterogeneous population."
+)
 
 
 def _default_llm_studio_state() -> dict[str, Any]:
@@ -270,6 +340,40 @@ def _build_scenario_param_chips(result: dict[str, Any] | None):
             )
         )
     return html.Div(chips, className="cp-scenario__metric-grid")
+
+
+def _build_scenario_output_param_grid(result: dict[str, Any] | None):
+    """Render scenario parameters as a compact inspector grid for responsive layouts."""
+    result = result or {}
+    cards = []
+    for param_key in SCENARIO_PARAM_KEYS:
+        source = (result.get("parameter_sources") or {}).get(param_key, "llm")
+        cards.append(
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span(_scenario_param_label(param_key), className="cp-chat-context__label"),
+                            html.Span(
+                                "Neutral default" if source == "default" else "LLM-derived",
+                                className=(
+                                    "cp-badge cp-badge--warning"
+                                    if source == "default"
+                                    else "cp-badge cp-badge--primary"
+                                ),
+                            ),
+                        ],
+                        className="cp-scenario__metric-header",
+                    ),
+                    html.Div(
+                        _format_scenario_value(result.get(param_key)),
+                        className="cp-chat-context__value",
+                    ),
+                ],
+                className="cp-chat-context__chip",
+            )
+        )
+    return html.Div(cards, className="cp-chat-context__grid")
 
 
 def _build_scenario_intro():
@@ -533,46 +637,15 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
         )
 
     result = scenario_state.get("result") or {}
-    params_rows = []
-    for param_key in SCENARIO_PARAM_KEYS:
-        source = (result.get("parameter_sources") or {}).get(param_key, "llm")
-        params_rows.append(
-            html.Tr([
-                html.Td(
-                    _scenario_param_label(param_key),
-                    style={"fontSize": "var(--cp-text-sm)"},
-                ),
-                html.Td(
-                    [
-                        html.Span(
-                            _format_scenario_value(result.get(param_key)),
-                            style={
-                                "fontFamily": "var(--cp-font-mono)",
-                                "fontSize": "var(--cp-text-sm)",
-                            },
-                        ),
-                        html.Span(
-                            "Neutral default" if source == "default" else "LLM-derived",
-                            className=(
-                                "cp-badge cp-badge--warning ms-2"
-                                if source == "default"
-                                else "cp-badge cp-badge--primary ms-2"
-                            ),
-                        ),
-                    ],
-                ),
-            ])
-        )
-
     children = [
         html.Div("Parsed Feedback", className="cp-scenario__section-label"),
         html.P(
             result.get("scenario_summary", ""),
-            className="cp-scenario__reply-summary",
+            className="cp-scenario__reply-summary cp-llm-inspector__prose",
         ),
         html.P(
             result.get("reasoning", ""),
-            className="cp-scenario__reply-reasoning",
+            className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
         ),
     ]
     if result.get("coverage_warning"):
@@ -580,7 +653,7 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
             html.Div("Coverage Warning", className="cp-scenario__section-label"),
             html.Div(
                 [
-                    html.Div(result.get("coverage_warning"), className="cp-scenario__warning-text"),
+                    html.Div(result.get("coverage_warning"), className="cp-scenario__warning-text cp-llm-inspector__prose"),
                     html.Div(
                         "Scenario Description Example",
                         className="cp-scenario__warning-example-label",
@@ -595,16 +668,11 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
         ])
     children.extend([
         html.Div("Model Parameters", className="cp-scenario__section-label"),
-        dbc.Table(
-            html.Tbody(params_rows),
-            bordered=True,
-            size="sm",
-            className="mt-2",
-        ),
+        _build_scenario_output_param_grid(result),
         html.Div("How To Use These Parameters", className="cp-scenario__section-label"),
         html.Div(
             result.get("next_step_guidance", SCENARIO_NEXT_STEP_GUIDANCE),
-            className="cp-scenario__next-step",
+            className="cp-scenario__next-step cp-llm-inspector__prose",
         ),
     ])
     raw_block = _build_scenario_raw_output(scenario_state.get("raw_response"))
@@ -662,6 +730,42 @@ def _normalize_chat_state(data: dict[str, Any] | list[Any] | None) -> dict[str, 
     context_snapshot = data.get("context")
     if isinstance(context_snapshot, dict):
         state["context"] = context_snapshot
+
+    return state
+
+
+def _default_profile_state() -> dict[str, Any]:
+    """Return the initial Profile Generator state."""
+    return {
+        "status": "idle",
+        "error": None,
+        "elapsed": None,
+        "model": None,
+        "request_id": None,
+        "description": "",
+        "result": None,
+        "raw_response": None,
+        "history": [],
+    }
+
+
+def _normalize_profile_state(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Merge arbitrary store payloads with the expected Profile Generator schema."""
+    state = _default_profile_state()
+    if not isinstance(data, dict):
+        return state
+
+    state["status"] = str(data.get("status") or "idle")
+    state["error"] = data.get("error")
+    state["elapsed"] = data.get("elapsed")
+    state["model"] = data.get("model")
+    state["request_id"] = data.get("request_id")
+    state["description"] = str(data.get("description") or "")
+    state["result"] = data.get("result") if isinstance(data.get("result"), dict) else None
+    state["raw_response"] = data.get("raw_response")
+    history = data.get("history")
+    if isinstance(history, list):
+        state["history"] = [item for item in history if isinstance(item, dict)]
 
     return state
 
@@ -790,7 +894,10 @@ def _build_chat_context_panel(chat_state: dict[str, Any] | None):
             ],
             accent_first=True,
         ),
-        html.Div(str(context_snapshot.get("note") or ""), className="cp-scenario__reply-reasoning"),
+        html.Div(
+            str(context_snapshot.get("note") or ""),
+            className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
+        ),
         html.Div("Latest Metrics", className="cp-scenario__section-label"),
         _build_chat_context_grid(latest_metrics, CHAT_CONTEXT_METRICS),
         html.Div("Model Parameters", className="cp-scenario__section-label"),
@@ -813,6 +920,490 @@ def _build_chat_context_panel(chat_state: dict[str, Any] | None):
         children=children,
         class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
     )
+
+
+def _profile_prompt_text(button_id: str | None) -> str | None:
+    """Return the full prompt text for one suggested-profile button id."""
+    for prompt_button_id, _, prompt_text in PROFILE_SUGGESTED_PROMPTS:
+        if prompt_button_id == button_id:
+            return prompt_text
+    return None
+
+
+def _profile_skill_fields() -> list[tuple[str, str]]:
+    """Return the subset of profile fields that belong to task skills."""
+    return [field for field in PROFILE_PARAM_FIELDS if field[0].startswith("skill_")]
+
+
+def _profile_strength_label(value: Any) -> str:
+    """Return a readable qualitative label for one profile score."""
+    if not isinstance(value, (int, float)):
+        return "Unknown"
+    if value < 0.4:
+        return "Low"
+    if value < 0.7:
+        return "Moderate"
+    return "High"
+
+
+def _profile_delegation_style(value: Any) -> str:
+    """Return a plain-language behavioural label for delegation preference."""
+    if not isinstance(value, (int, float)):
+        return "Underspecified"
+    if value < 0.35:
+        return "Mostly self-serve"
+    if value < 0.65:
+        return "Mixed strategy"
+    return "Service-oriented"
+
+
+def _build_profile_intro():
+    """Render a compact guide for the Profile Generator tab."""
+    return html.Div(
+        [
+            html.Div("How To Use Profile Generator", className="cp-scenario-guide__label"),
+            html.Div(
+                "Describe one agent type in plain language, including routines, time pressure, comfort with services, and strengths across chores, paperwork, errands, or repairs. "
+                "The generator returns a readable archetype summary together with explicit delegation and skill attributes you can use in simulation setup.",
+                className="cp-scenario-guide__text",
+            ),
+            html.Div(
+                [
+                    html.Div("Suggested prompts", className="cp-profile__prompt-label"),
+                    html.Div(
+                        [
+                            dbc.Button(
+                                label,
+                                id=button_id,
+                                className="cp-btn-outline cp-profile__prompt-btn",
+                                size="sm",
+                            )
+                            for button_id, label, _ in PROFILE_SUGGESTED_PROMPTS
+                        ],
+                        className="cp-profile__prompt-row",
+                    ),
+                ],
+                className="cp-profile__prompt-strip",
+            ),
+        ],
+        className="cp-scenario-guide",
+    )
+
+
+def _build_profile_skill_figure(result: dict[str, Any] | None) -> go.Figure:
+    """Build a radar chart that visualises the generated task-skill mix."""
+    result = result or {}
+    skill_fields = _profile_skill_fields()
+    labels = [label.replace(" Skill", "") for _, label in skill_fields]
+    values = [float(result.get(key, 0.0) or 0.0) for key, _ in skill_fields]
+    if values:
+        labels.append(labels[0])
+        values.append(values[0])
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=values,
+        theta=labels,
+        fill="toself",
+        fillcolor="rgba(44,140,153,0.14)",
+        line=dict(color=CHART_COLORWAY[0], width=2),
+        name="Skill mix",
+    ))
+    fig.update_layout(
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            radialaxis=dict(
+                visible=True,
+                range=[0, 1],
+                tickfont=dict(size=10),
+            ),
+        ),
+        showlegend=False,
+        margin=dict(t=24, b=16, l=36, r=36),
+        height=280,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    return fig
+
+
+def _build_profile_summary_grid(result: dict[str, Any] | None):
+    """Render a compact summary of the generated agent archetype."""
+    result = result or {}
+    skill_fields = _profile_skill_fields()
+    strongest_skill = max(
+        skill_fields,
+        key=lambda item: float(result.get(item[0], 0.0) or 0.0),
+    )
+    weakest_skill = min(
+        skill_fields,
+        key=lambda item: float(result.get(item[0], 0.0) or 0.0),
+    )
+    summary_cards = [
+        _build_chat_context_chip(
+            "Delegation Style",
+            _profile_delegation_style(result.get("delegation_preference")),
+            accent=True,
+        ),
+        _build_chat_context_chip(
+            "Delegation Preference",
+            f"{_format_scenario_value(result.get('delegation_preference'))} · {_profile_strength_label(result.get('delegation_preference'))}",
+        ),
+        _build_chat_context_chip(
+            "Strongest Skill",
+            f"{strongest_skill[1].replace(' Skill', '')} · {_format_scenario_value(result.get(strongest_skill[0]))}",
+        ),
+        _build_chat_context_chip(
+            "Lowest Skill",
+            f"{weakest_skill[1].replace(' Skill', '')} · {_format_scenario_value(result.get(weakest_skill[0]))}",
+        ),
+    ]
+    return html.Div(summary_cards, className="cp-chat-context__grid")
+
+
+def _build_profile_param_grid(result: dict[str, Any] | None):
+    """Render simulation-facing profile parameters with explanation text."""
+    result = result or {}
+    cards = []
+    for field_key, field_label in PROFILE_PARAM_FIELDS:
+        cards.append(
+            html.Div(
+                [
+                    html.Div(field_label, className="cp-chat-context__label"),
+                    html.Div(
+                        _format_scenario_value(result.get(field_key)),
+                        className="cp-chat-context__value",
+                    ),
+                    html.Div(
+                        PROFILE_PARAM_HELP.get(
+                            field_key,
+                            AgentProfileOutput.model_fields[field_key].description or "",
+                        ),
+                        className="cp-profile__param-help",
+                    ),
+                ],
+                className="cp-chat-context__chip cp-profile__param-card",
+            )
+        )
+    return html.Div(cards, className="cp-chat-context__grid")
+
+
+def _build_profile_message_chips(result: dict[str, Any] | None):
+    """Render compact profile metrics inside the assistant reply bubble."""
+    result = result or {}
+    strongest_skill = max(
+        _profile_skill_fields(),
+        key=lambda item: float(result.get(item[0], 0.0) or 0.0),
+    )
+    chips = [
+        html.Div(
+            [
+                html.Div("Delegation Style", className="cp-scenario__metric-label"),
+                html.Div(
+                    _profile_delegation_style(result.get("delegation_preference")),
+                    className="cp-scenario__metric-value",
+                ),
+            ],
+            className="cp-scenario__metric-chip",
+        ),
+        html.Div(
+            [
+                html.Div("Delegation Preference", className="cp-scenario__metric-label"),
+                html.Div(
+                    _format_scenario_value(result.get("delegation_preference")),
+                    className="cp-scenario__metric-value",
+                ),
+            ],
+            className="cp-scenario__metric-chip",
+        ),
+        html.Div(
+            [
+                html.Div("Strongest Skill", className="cp-scenario__metric-label"),
+                html.Div(
+                    f"{strongest_skill[1].replace(' Skill', '')} · {_format_scenario_value(result.get(strongest_skill[0]))}",
+                    className="cp-scenario__metric-value",
+                ),
+            ],
+            className="cp-scenario__metric-chip",
+        ),
+    ]
+    return html.Div(chips, className="cp-scenario__metric-grid")
+
+
+def _build_profile_thread(profile_state: dict[str, Any] | None):
+    """Render the chat-style Profile Generator transcript."""
+    profile_state = profile_state or {}
+    history = profile_state.get("history") or []
+    if not history:
+        return _scenario_placeholder(
+            "Describe one agent type and the generator will translate it into explicit delegation and skill attributes."
+        )
+
+    bubbles = []
+    for message in history:
+        if message.get("role") == "user":
+            bubbles.append(
+                html.Div([
+                    html.Div("You", className="cp-chat__sender"),
+                    html.Div(message.get("content", "")),
+                ], className="cp-chat__message cp-chat__message--user")
+            )
+            continue
+
+        meta = []
+        if message.get("model"):
+            meta.append(str(message.get("model")))
+        if isinstance(message.get("elapsed"), (int, float)):
+            meta.append(f"{message['elapsed']:.1f}s")
+
+        body_children = [
+            html.Div("Profile Generator", className="cp-chat__sender"),
+            html.Div(
+                message.get("content", ""),
+                className="cp-scenario__reply-summary",
+            ),
+        ]
+
+        if message.get("status") == "pending":
+            body_children.extend([
+                html.Div(
+                    "Translating your description into one simulation-ready agent archetype with explicit delegation and task-skill values.",
+                    className="cp-scenario__reply-reasoning",
+                ),
+                html.Div(
+                    [
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                    ],
+                    className="cp-scenario__thinking",
+                ),
+            ])
+        elif message.get("status") == "error":
+            body_children.append(
+                html.Div(
+                    message.get("error", "Profile generation failed."),
+                    className="cp-scenario__reply-error",
+                )
+            )
+        else:
+            body_children.extend([
+                _build_profile_message_chips(message.get("result")),
+                html.Div(
+                    "The structured profile is ready in the inspector on the right.",
+                    className="cp-scenario__reply-reasoning",
+                ),
+            ])
+            raw_block = _build_scenario_raw_output(
+                message.get("raw_response"),
+                summary_text="View raw profile JSON",
+            )
+            if raw_block is not None:
+                body_children.append(raw_block)
+
+        if meta:
+            body_children.append(
+                html.Div(" · ".join(meta), className="cp-scenario__message-meta")
+            )
+
+        bubbles.append(
+            html.Div(
+                body_children,
+                className="cp-chat__message cp-chat__message--ai cp-scenario__assistant-message",
+            )
+        )
+
+    return html.Div(bubbles, className="cp-chat")
+
+
+def _build_profile_output(profile_state: dict[str, Any] | None):
+    """Render the generated profile inspector."""
+    profile_state = profile_state or {}
+    status = profile_state.get("status", "idle")
+    subtitle_parts = []
+    elapsed = profile_state.get("elapsed")
+    if isinstance(elapsed, (int, float)):
+        subtitle_parts.append(f"{elapsed:.1f}s")
+    model_name = profile_state.get("model")
+    if model_name:
+        subtitle_parts.append(str(model_name))
+    subtitle = " · ".join(subtitle_parts) if subtitle_parts else "Simulation-ready agent archetype"
+
+    if status == "idle":
+        return card(
+            title="Generated Agent Type",
+            subtitle=subtitle,
+            children=_scenario_placeholder(
+                "Generate a profile to inspect the archetype summary, delegation tendency, task-skill mix, and raw LLM JSON."
+            ),
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+        )
+
+    if status == "pending":
+        return card(
+            title="Generating Profile",
+            subtitle=subtitle,
+            children=[
+                html.Div(
+                    profile_state.get("description", ""),
+                    className="cp-scenario__pending-description",
+                ),
+                html.Div(
+                    "The description has been sent. Delegation and skill attributes will appear here as soon as the structured profile is validated.",
+                    className="cp-scenario__reply-reasoning",
+                ),
+                html.Div(
+                    [
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                    ],
+                    className="cp-scenario__thinking",
+                ),
+            ],
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+        )
+
+    if status in {"empty", "error"}:
+        return card(
+            title="Profile Generator Error",
+            subtitle=subtitle,
+            children=html.Div(
+                profile_state.get("error") or "Unable to generate the agent profile.",
+                className="cp-scenario__reply-error",
+            ),
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+        )
+
+    result = profile_state.get("result") or {}
+    children = [
+        html.Div(
+            [
+                status_badge("Profile ready", "success"),
+                status_badge("Simulation-ready", "info"),
+            ],
+            className="d-flex gap-2 flex-wrap mb-1",
+        ),
+        html.Div("Agent Type Summary", className="cp-scenario__section-label"),
+        html.P(
+            result.get("profile_description", ""),
+            className="cp-scenario__reply-summary cp-llm-inspector__prose",
+        ),
+        _build_profile_summary_grid(result),
+        html.Div("Skill Profile", className="cp-scenario__section-label"),
+        html.Div(
+            [
+                html.Div(
+                    dcc.Graph(
+                        figure=_build_profile_skill_figure(result),
+                        config={"displayModeBar": False},
+                    ),
+                    className="cp-profile__chart-shell",
+                ),
+                html.Div(
+                    "Higher skill values mean the archetype can self-serve more effectively in that task domain, which reduces the need to delegate when time allows.",
+                    className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
+                ),
+            ],
+            className="cp-profile__visual-wrap",
+        ),
+        html.Div("Parameter Breakdown", className="cp-scenario__section-label"),
+        _build_profile_param_grid(result),
+        html.Div("How To Use This Agent Type", className="cp-scenario__section-label"),
+        html.Div(
+            PROFILE_NEXT_STEP_GUIDANCE,
+            className="cp-scenario__next-step cp-llm-inspector__prose",
+        ),
+    ]
+    raw_block = _build_scenario_raw_output(
+        profile_state.get("raw_response"),
+        summary_text="View raw profile JSON",
+    )
+    if raw_block is not None:
+        children.extend([
+            html.Div("Raw LLM Output", className="cp-scenario__section-label"),
+            raw_block,
+        ])
+
+    return card(
+        title="Generated Agent Type",
+        subtitle=subtitle,
+        children=children,
+        class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+    )
+
+
+def _stage_profile_request(
+    profile_data: dict[str, Any] | None,
+    description: str,
+    model_name: str,
+    request_id: str,
+) -> dict[str, Any]:
+    """Append the user turn and a pending assistant turn before the LLM returns."""
+    state = _normalize_profile_state(profile_data)
+    state.update({
+        "status": "pending",
+        "error": None,
+        "elapsed": None,
+        "model": model_name,
+        "request_id": request_id,
+        "description": description,
+        "result": None,
+        "raw_response": None,
+    })
+    state["history"].append({
+        "id": f"{request_id}-user",
+        "role": "user",
+        "content": description,
+    })
+    state["history"].append({
+        "id": f"{request_id}-assistant",
+        "role": "assistant",
+        "request_id": request_id,
+        "status": "pending",
+        "model": model_name,
+        "content": "Reading your description and drafting one simulation-ready agent profile.",
+    })
+    return state
+
+
+def _complete_profile_request(
+    profile_data: dict[str, Any] | None,
+    request_id: str,
+    model_name: str,
+    elapsed: float,
+    *,
+    result: dict[str, Any] | None = None,
+    raw_response: Any = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Replace the pending assistant turn with the final Profile Generator reply."""
+    state = _normalize_profile_state(profile_data)
+    is_success = error is None and result is not None
+
+    for message in state["history"]:
+        if message.get("role") == "assistant" and message.get("request_id") == request_id:
+            message.update({
+                "status": "success" if is_success else "error",
+                "model": model_name,
+                "elapsed": elapsed,
+                "content": (result or {}).get("profile_description", "Profile ready.") if is_success else error,
+                "result": result if is_success else None,
+                "raw_response": raw_response,
+                "error": error,
+            })
+            break
+
+    state.update({
+        "status": "success" if is_success else "error",
+        "error": error,
+        "elapsed": elapsed,
+        "model": model_name,
+        "request_id": request_id,
+        "result": result if is_success else None,
+        "raw_response": raw_response,
+    })
+    return state
 
 
 def _build_chat_thread(chat_state: dict[str, Any] | None):
@@ -1250,32 +1841,65 @@ def _tab_chat() -> html.Div:
 def _tab_profile() -> html.Div:
     """Role 2: Profile Generator — demographic description to agent attributes."""
     return html.Div([
+        _build_profile_intro(),
         dbc.Row([
             dbc.Col([
-                dbc.Input(
-                    id="profile-input",
-                    placeholder="Describe an agent type (e.g., 'An elderly retiree who values self-sufficiency')...",
-                    type="text",
+                card(
+                    title="Profile Conversation",
+                    subtitle="Describe one simulation archetype, watch the generator think, then inspect the structured agent type.",
+                    children=[
+                        html.Div(id="profile-thread", className="cp-scenario-thread"),
+                        html.Div(
+                            [
+                                dbc.Textarea(
+                                    id="profile-input",
+                                    placeholder=(
+                                        "Describe one agent type, including daily routine, time pressure, comfort with services, "
+                                        "and strengths or weaknesses across chores, paperwork, errands, or repairs.\n\nExample: "
+                                        + PROFILE_DESCRIPTION_EXAMPLE
+                                    ),
+                                    style={"fontSize": "var(--cp-text-sm)"},
+                                    className="cp-scenario__input",
+                                    rows=3,
+                                    n_submit=0,
+                                    submit_on_enter=True,
+                                    maxLength=500,
+                                    persistence=True,
+                                    persistence_type="session",
+                                ),
+                                html.Div(
+                                    [
+                                        dbc.Button(
+                                            [html.I(className="fas fa-user-gear me-1"), "Generate Profile"],
+                                            id="btn-generate-profile",
+                                            className="cp-btn-primary",
+                                            size="sm",
+                                        ),
+                                        dbc.Button(
+                                            [html.I(className="fas fa-trash-alt me-1"), "Clear Conversation"],
+                                            id="btn-clear-profile",
+                                            className="cp-btn-outline",
+                                            size="sm",
+                                        ),
+                                    ],
+                                    className="cp-scenario__composer-actions",
+                                ),
+                                html.Div(
+                                    "Press Enter to send. Use Shift+Enter for a new line. The structured agent type appears in the inspector on the right.",
+                                    className="cp-scenario__composer-note",
+                                ),
+                            ],
+                            className="cp-scenario-composer",
+                        ),
+                    ],
+                    class_name="cp-llm-workspace__card cp-llm-workspace__card--conversation",
                 ),
-                html.Div([
-                    dbc.Button(
-                        [html.I(className="fas fa-user-gear me-1"), "Generate Profile"],
-                        id="btn-generate-profile",
-                        className="cp-btn-primary mt-2",
-                        size="sm",
-                    ),
-                    dbc.Spinner(
-                        html.Span(id="profile-spinner"),
-                        size="sm", color="primary",
-                        spinner_class_name="ms-2",
-                    ),
-                ], className="d-flex align-items-center"),
-            ], md=5),
+            ], xl=7, lg=12, className="cp-llm-workspace__col"),
             dbc.Col(
-                html.Div(id="profile-output"),
-                md=7,
+                html.Div(id="profile-output", className="cp-llm-workspace__slot"),
+                xl=5, lg=12, className="cp-llm-workspace__col",
             ),
-        ]),
+        ], className="g-4 cp-llm-workspace"),
     ], className="p-3")
 
 
@@ -1384,6 +2008,7 @@ layout = html.Div([
     dcc.Store(id="llm-studio-page-store", data={"mounted": True}),
     dcc.Store(id="scenario-thread-scroll-store", data=0),
     dcc.Store(id="chat-thread-scroll-store", data=0),
+    dcc.Store(id="profile-thread-scroll-store", data=0),
     html.Div([
         html.H2("LLM Studio", className="cp-page-title"),
         html.P(
@@ -1950,89 +2575,207 @@ clientside_callback(
 
 
 # =========================================================================
-# Callback 6: Profile Generator (Role 2)
+# Callback 17: Clear Profile Generator conversation
 # =========================================================================
 
 @callback(
-    Output("profile-output", "children"),
-    Input("btn-generate-profile", "n_clicks"),
-    State("profile-input", "value"),
+    Output("profile-history-store", "data", allow_duplicate=True),
+    Output("profile-input", "value", allow_duplicate=True),
+    Input("btn-clear-profile", "n_clicks"),
     prevent_initial_call=True,
 )
-def generate_profile_cb(n_clicks, description):
+def clear_profile_conversation(n_clicks):
+    """Reset the Profile Generator transcript so the user can start over."""
+    return _default_profile_state(), ""
+
+
+# =========================================================================
+# Callback 18: Load a suggested Profile Generator prompt
+# =========================================================================
+
+@callback(
+    Output("profile-input", "value", allow_duplicate=True),
+    [Input(button_id, "n_clicks") for button_id, _, _ in PROFILE_SUGGESTED_PROMPTS],
+    prevent_initial_call=True,
+)
+def load_profile_prompt(*_clicks):
+    """Populate the profile textarea from one of the suggested quick-start prompts."""
+    prompt_text = _profile_prompt_text(ctx.triggered_id)
+    if prompt_text is None:
+        return no_update
+    return prompt_text
+
+
+# =========================================================================
+# Callback 19: Stage Profile Generator request immediately
+# =========================================================================
+
+@callback(
+    Output("profile-history-store", "data", allow_duplicate=True),
+    Output("profile-generate-request-store", "data"),
+    Output("profile-input", "value"),
+    Input("btn-generate-profile", "n_clicks"),
+    Input("profile-input", "n_submit"),
+    State("profile-input", "value"),
+    State("profile-history-store", "data"),
+    prevent_initial_call=True,
+)
+def stage_profile_request(n_clicks, n_submit, description, profile_data):
+    """Append the user message and a pending assistant bubble before generation starts."""
+    if ctx.triggered_id not in {"btn-generate-profile", "profile-input"}:
+        return no_update, no_update, no_update
     if not description or not description.strip():
-        return html.Div("Please enter a demographic description.",
-                        style={"color": "var(--cp-danger)", "fontSize": "var(--cp-text-sm)"})
+        state = _normalize_profile_state(profile_data)
+        state.update({
+            "status": "empty",
+            "error": "Please enter an agent type description.",
+            "elapsed": None,
+            "model": None,
+            "result": None,
+            "raw_response": None,
+        })
+        return state, no_update, no_update
+
+    model_name = app_state.get_role_model("role_2")
+    request_id = _make_request_id()
+    next_state = _stage_profile_request(profile_data, description.strip(), model_name, request_id)
+    request = {
+        "request_id": request_id,
+        "description": description.strip(),
+        "model": model_name,
+    }
+    return next_state, request, ""
+
+
+# =========================================================================
+# Callback 20: Resolve Profile Generator request
+# =========================================================================
+
+@callback(
+    Output("profile-history-store", "data", allow_duplicate=True),
+    Input("profile-generate-request-store", "data"),
+    State("profile-history-store", "data"),
+    prevent_initial_call=True,
+    running=[
+        (Output("btn-generate-profile", "disabled"), True, False),
+        (Output("btn-clear-profile", "disabled"), True, False),
+        (Output("profile-input", "disabled"), True, False),
+        (Output("btn-profile-prompt-busy", "disabled"), True, False),
+        (Output("btn-profile-prompt-self-serve", "disabled"), True, False),
+        (Output("btn-profile-prompt-coordinator", "disabled"), True, False),
+    ],
+)
+def resolve_profile_request(request, profile_data):
+    """Perform the generation and replace the pending bubble with the final reply."""
+    if not request:
+        return no_update
 
     import time
-    model_name = app_state.get_role_model("role_2")
+    from api.llm_audit import LlmAuditRecorder
+    from api.llm_service import generate_agent_profile
+
+    request_id = request.get("request_id", _make_request_id())
+    description = str(request.get("description") or "")
+    model_name = str(request.get("model") or app_state.get_role_model("role_2"))
     t0 = time.perf_counter()
+    recorder = LlmAuditRecorder(
+        run_id=request_id,
+        output_dir=Path("data/results/llm_logs"),
+    )
+
     try:
-        from api.llm_service import generate_agent_profile
-        result = generate_agent_profile(description, model=model_name)
+        result = generate_agent_profile(description, model=model_name, recorder=recorder)
         elapsed = time.perf_counter() - t0
-        _record_audit("Role 2", "profile_generator", model_name,
-                      description, result, elapsed)
-
-        # Radar chart of 4 skills
-        skills = ["domestic", "administrative", "errand", "maintenance"]
-        skill_vals = [result.get(f"skill_{s}", 0.5) for s in skills]
-        skill_vals.append(skill_vals[0])  # close the polygon
-        labels = [s.title() for s in skills] + [skills[0].title()]
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatterpolar(
-            r=skill_vals, theta=labels,
-            fill="toself",
-            fillcolor="rgba(44,140,153,0.15)",
-            line=dict(color=CHART_COLORWAY[0], width=2),
-            name="Skills",
-        ))
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(visible=True, range=[0, 1]),
-            ),
-            showlegend=False,
-            margin=dict(t=30, b=30, l=60, r=60),
-            height=250,
+        role_calls = recorder.get_calls("role_2")
+        raw_response = role_calls[-1].get("raw_response") if role_calls else None
+        _record_audit("Role 2", "profile_generator", model_name, description, result, elapsed)
+        recorder.write_role_artifact(
+            role="role_2",
+            filename=f"{request_id}_profile_generator_ui.json",
+            payload={
+                "source": "dash_llm_studio",
+                "description": description,
+                "result": result,
+            },
         )
-
-        return card(
-            title="Generated Profile",
-            subtitle=f"{elapsed:.1f}s · {model_name}",
-            children=[
-                html.P(
-                    result.get("profile_description", ""),
-                    style={"fontStyle": "italic", "fontSize": "var(--cp-text-sm)"},
-                ),
-                dbc.Row([
-                    dbc.Col([
-                        html.Div(
-                            f"Delegation: {result.get('delegation_preference', 0):.2f}",
-                            style={"fontSize": "var(--cp-text-lg)",
-                                   "fontWeight": "var(--cp-weight-bold)",
-                                   "color": "var(--cp-primary)"},
-                        ),
-                        html.Div("delegation_preference",
-                                 style={"fontSize": "var(--cp-text-xs)",
-                                        "color": "var(--cp-text-tertiary)"}),
-                    ], md=4, className="d-flex flex-column justify-content-center"),
-                    dbc.Col(
-                        dcc.Graph(figure=fig, config={"displayModeBar": False},
-                                  style={"height": "250px"}),
-                        md=8,
-                    ),
-                ]),
-            ],
+        return _complete_profile_request(
+            profile_data,
+            request_id,
+            model_name,
+            elapsed,
+            result=result,
+            raw_response=raw_response,
         )
     except Exception as e:
         elapsed = time.perf_counter() - t0
-        _record_audit("Role 2", "profile_generator", model_name,
-                      description, None, elapsed, str(e))
-        return html.Div(
-            f"Error: {e}",
-            style={"color": "var(--cp-danger)", "fontSize": "var(--cp-text-sm)"},
+        role_calls = recorder.get_calls("role_2")
+        raw_response = role_calls[-1].get("raw_response") if role_calls else None
+        _record_audit("Role 2", "profile_generator", model_name, description, None, elapsed, str(e))
+        try:
+            recorder.write_role_artifact(
+                role="role_2",
+                filename=f"{request_id}_profile_generator_ui.json",
+                payload={
+                    "source": "dash_llm_studio",
+                    "description": description,
+                    "error": str(e),
+                },
+            )
+        except Exception:
+            logger.exception("Failed to persist Profile Generator UI audit artifact.")
+        return _complete_profile_request(
+            profile_data,
+            request_id,
+            model_name,
+            elapsed,
+            raw_response=raw_response,
+            error=f"Error: {e}",
         )
+
+
+# =========================================================================
+# Callback 21: Rehydrate Profile Generator views on page remount
+# =========================================================================
+
+@callback(
+    Output("profile-thread", "children"),
+    Output("profile-output", "children"),
+    Input("profile-history-store", "data"),
+    Input("llm-studio-page-store", "data"),
+)
+def render_profile_views(profile_data, page_state):
+    """Render the profile transcript and structured agent-type inspector."""
+    state = _normalize_profile_state(profile_data)
+    return _build_profile_thread(state), _build_profile_output(state)
+
+
+# =========================================================================
+# Callback 22: Auto-scroll Profile Generator transcript
+# =========================================================================
+
+clientside_callback(
+    """
+    function(children, pageState) {
+        const container = document.getElementById("profile-thread");
+        if (!container) {
+            return window.dash_clientside.no_update;
+        }
+
+        window.requestAnimationFrame(() => {
+            container.scrollTo({
+                top: container.scrollHeight,
+                behavior: "smooth",
+            });
+        });
+
+        return Date.now();
+    }
+    """,
+    Output("profile-thread-scroll-store", "data"),
+    Input("profile-thread", "children"),
+    Input("llm-studio-page-store", "data"),
+    prevent_initial_call=True,
+)
 
 
 # =========================================================================

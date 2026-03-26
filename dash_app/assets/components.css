@@ -304,6 +304,10 @@
   overflow-y: auto;
 }
 
+.cp-llm-inspector__prose {
+  max-width: 68ch;
+}
+
 
 /* --- Scenario Parser Conversation --- */
 .cp-scenario-guide {
@@ -328,6 +332,31 @@
   font-size: var(--cp-text-sm);
   line-height: 1.5;
   color: var(--cp-text-secondary);
+}
+
+.cp-profile__prompt-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-2);
+  flex-wrap: wrap;
+}
+
+.cp-profile__prompt-label {
+  font-size: var(--cp-text-xs);
+  font-weight: var(--cp-weight-semibold);
+  color: var(--cp-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cp-profile__prompt-row {
+  display: flex;
+  gap: var(--cp-space-2);
+  flex-wrap: wrap;
+}
+
+.cp-profile__prompt-btn {
+  padding-inline: 10px !important;
 }
 
 .cp-scenario-thread {
@@ -509,7 +538,7 @@
 
 .cp-chat-context__grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
   gap: var(--cp-space-2);
   margin-top: var(--cp-space-2);
 }
@@ -519,6 +548,7 @@
   background: var(--cp-bg);
   border: 1px solid var(--cp-border);
   border-radius: var(--cp-radius-md);
+  min-width: 0;
 }
 
 .cp-chat-context__chip--accent {
@@ -537,6 +567,31 @@
   font-weight: var(--cp-weight-semibold);
   font-family: var(--cp-font-mono);
   color: var(--cp-text-primary);
+}
+
+.cp-profile__param-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cp-profile__param-help {
+  font-size: var(--cp-text-xs);
+  line-height: 1.55;
+  color: var(--cp-text-secondary);
+}
+
+.cp-profile__visual-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cp-space-3);
+}
+
+.cp-profile__chart-shell {
+  padding: var(--cp-space-2);
+  background: linear-gradient(180deg, rgba(42, 139, 156, 0.06) 0%, var(--cp-bg) 100%);
+  border: 1px solid var(--cp-border);
+  border-radius: var(--cp-radius-lg);
 }
 
 .cp-scenario__pending-description {
@@ -602,10 +657,6 @@
     padding: 10px 12px;
   }
 
-  .cp-chat-context__grid {
-    grid-template-columns: 1fr;
-  }
-
   .cp-scenario-thread {
     min-height: 220px;
   }
@@ -628,6 +679,10 @@
   .cp-scenario__input {
     min-height: 88px !important;
     height: clamp(88px, 16vh, 160px) !important;
+  }
+
+  .cp-llm-inspector__prose {
+    max-width: none;
   }
 }
 
