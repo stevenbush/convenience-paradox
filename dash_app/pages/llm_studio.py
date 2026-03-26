@@ -493,6 +493,7 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
             children=_scenario_placeholder(
                 "Submit a scenario to see the validated summary, parameter mapping, and raw LLM JSON."
             ),
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
         )
 
     if status == "pending":
@@ -517,6 +518,7 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
                     className="cp-scenario__thinking",
                 ),
             ],
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
         )
 
     if status in {"empty", "error"}:
@@ -527,6 +529,7 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
                 scenario_state.get("error") or "Unable to parse the scenario.",
                 className="cp-scenario__reply-error",
             ),
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
         )
 
     result = scenario_state.get("result") or {}
@@ -615,6 +618,7 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
         title="Latest Parsed Scenario",
         subtitle=subtitle,
         children=children,
+        class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
     )
 
 
@@ -720,6 +724,30 @@ def _build_chat_intro():
     )
 
 
+def _build_chat_context_chip(label: str, value: Any, accent: bool = False):
+    """Render one compact dashboard-style context chip."""
+    classes = "cp-chat-context__chip"
+    if accent:
+        classes += " cp-chat-context__chip--accent"
+    return html.Div(
+        [
+            html.Div(label, className="cp-chat-context__label"),
+            html.Div(_format_scenario_value(value), className="cp-chat-context__value"),
+        ],
+        className=classes,
+    )
+
+
+def _build_chat_context_grid(values: dict[str, Any], fields: list[tuple[str, str]], *, accent_first: bool = False):
+    """Render a compact grid of dashboard-style context chips."""
+    chips = [
+        _build_chat_context_chip(label, values.get(key), accent=accent_first and index == 0)
+        for index, (key, label) in enumerate(fields)
+        if key in values
+    ]
+    return html.Div(chips, className="cp-chat-context__grid")
+
+
 def _build_chat_context_panel(chat_state: dict[str, Any] | None):
     """Render the current simulation snapshot being interpreted."""
     chat_state = chat_state or {}
@@ -732,48 +760,41 @@ def _build_chat_context_panel(chat_state: dict[str, Any] | None):
             title="Current Interpretation Context",
             subtitle=subtitle,
             children=_scenario_placeholder(str(context_snapshot.get("note") or "No simulation context available.")),
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
         )
 
-    summary_badges = html.Div(
-        [
-            status_badge(f"Step {context_snapshot.get('current_step', 0)}", "info"),
-            status_badge(f"Preset: {str(context_snapshot.get('preset', 'custom')).replace('_', ' ').title()}", "neutral"),
-            status_badge("Live results", "success"),
-        ],
-        className="d-flex gap-2 flex-wrap mb-3",
-    )
-
-    metric_rows = [
-        html.Tr([
-            html.Td(label, style={"fontSize": "var(--cp-text-sm)"}),
-            html.Td(
-                _format_scenario_value((context_snapshot.get("latest_metrics") or {}).get(key)),
-                style={"fontFamily": "var(--cp-font-mono)", "fontSize": "var(--cp-text-sm)"},
-            ),
-        ])
-        for key, label in CHAT_CONTEXT_METRICS
-        if key in (context_snapshot.get("latest_metrics") or {})
-    ]
-
-    param_rows = [
-        html.Tr([
-            html.Td(label, style={"fontSize": "var(--cp-text-sm)"}),
-            html.Td(
-                _format_scenario_value((context_snapshot.get("params") or {}).get(key)),
-                style={"fontFamily": "var(--cp-font-mono)", "fontSize": "var(--cp-text-sm)"},
-            ),
-        ])
-        for key, label in CHAT_CONTEXT_PARAMS
-        if key in (context_snapshot.get("params") or {})
-    ]
+    latest_metrics = context_snapshot.get("latest_metrics") or {}
+    params = context_snapshot.get("params") or {}
+    summary_values = {
+        "current_step": context_snapshot.get("current_step", 0),
+        "preset": str(context_snapshot.get("preset", "custom")).replace("_", " ").title(),
+        "avg_stress": latest_metrics.get("avg_stress"),
+        "avg_delegation_rate": latest_metrics.get("avg_delegation_rate"),
+    }
 
     children = [
-        summary_badges,
+        html.Div(
+            [
+                status_badge("Live results", "success"),
+                status_badge("Prompt-grounded", "info"),
+            ],
+            className="d-flex gap-2 flex-wrap mb-3",
+        ),
+        _build_chat_context_grid(
+            summary_values,
+            [
+                ("current_step", "Current Step"),
+                ("preset", "Preset"),
+                ("avg_stress", "Avg Stress"),
+                ("avg_delegation_rate", "Delegation Rate"),
+            ],
+            accent_first=True,
+        ),
         html.Div(str(context_snapshot.get("note") or ""), className="cp-scenario__reply-reasoning"),
         html.Div("Latest Metrics", className="cp-scenario__section-label"),
-        dbc.Table(html.Tbody(metric_rows), bordered=True, size="sm", className="mt-2"),
+        _build_chat_context_grid(latest_metrics, CHAT_CONTEXT_METRICS),
         html.Div("Model Parameters", className="cp-scenario__section-label"),
-        dbc.Table(html.Tbody(param_rows), bordered=True, size="sm", className="mt-2"),
+        _build_chat_context_grid(params, CHAT_CONTEXT_PARAMS),
     ]
 
     raw_block = _build_scenario_raw_output(
@@ -790,6 +811,7 @@ def _build_chat_context_panel(chat_state: dict[str, Any] | None):
         title="Current Interpretation Context",
         subtitle=subtitle,
         children=children,
+        class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
     )
 
 
@@ -1122,6 +1144,9 @@ def _tab_scenario() -> html.Div:
                                     ),
                                     style={"fontSize": "var(--cp-text-sm)"},
                                     className="cp-scenario__input",
+                                    rows=3,
+                                    n_submit=0,
+                                    submit_on_enter=True,
                                     maxLength=500,
                                     persistence=True,
                                     persistence_type="session",
@@ -1144,20 +1169,21 @@ def _tab_scenario() -> html.Div:
                                     className="cp-scenario__composer-actions",
                                 ),
                                 html.Div(
-                                    "The message is sent immediately; the parser reply appears as soon as validation finishes.",
+                                    "Press Enter to send. Use Shift+Enter for a new line. The parser reply appears as soon as validation finishes.",
                                     className="cp-scenario__composer-note",
                                 ),
                             ],
                             className="cp-scenario-composer",
                         ),
                     ],
+                    class_name="cp-llm-workspace__card cp-llm-workspace__card--conversation",
                 ),
-            ], md=7),
+            ], xl=7, lg=12, className="cp-llm-workspace__col"),
             dbc.Col(
-                html.Div(id="scenario-output"),
-                md=5,
+                html.Div(id="scenario-output", className="cp-llm-workspace__slot"),
+                xl=5, lg=12, className="cp-llm-workspace__col",
             ),
-        ]),
+        ], className="g-4 cp-llm-workspace"),
     ], className="p-3")
 
 
@@ -1179,6 +1205,9 @@ def _tab_chat() -> html.Div:
                                     placeholder="Ask about the current simulation (e.g., 'Why is stress rising even though delegation is high?')...",
                                     style={"fontSize": "var(--cp-text-sm)"},
                                     className="cp-scenario__input",
+                                    rows=3,
+                                    n_submit=0,
+                                    submit_on_enter=True,
                                     persistence=True,
                                     persistence_type="session",
                                 ),
@@ -1200,20 +1229,21 @@ def _tab_chat() -> html.Div:
                                     className="cp-scenario__composer-actions",
                                 ),
                                 html.Div(
-                                    "Your question is sent together with the current simulation snapshot shown on the right.",
+                                    "Press Enter to send. Use Shift+Enter for a new line. Your question is sent together with the current simulation snapshot shown on the right.",
                                     className="cp-scenario__composer-note",
                                 ),
                             ],
                             className="cp-scenario-composer",
                         ),
                     ],
+                    class_name="cp-llm-workspace__card cp-llm-workspace__card--conversation",
                 ),
-            ], md=7),
+            ], xl=7, lg=12, className="cp-llm-workspace__col"),
             dbc.Col(
-                html.Div(id="chat-context-output"),
-                md=5,
+                html.Div(id="chat-context-output", className="cp-llm-workspace__slot"),
+                xl=5, lg=12, className="cp-llm-workspace__col",
             ),
-        ]),
+        ], className="g-4 cp-llm-workspace"),
     ], className="p-3")
 
 
@@ -1546,12 +1576,15 @@ def clear_scenario_conversation(n_clicks, store_data):
     Output("scenario-parse-request-store", "data"),
     Output("scenario-input", "value"),
     Input("btn-parse-scenario", "n_clicks"),
+    Input("scenario-input", "n_submit"),
     State("scenario-input", "value"),
     State("llm-studio-store", "data"),
     prevent_initial_call=True,
 )
-def stage_scenario_request(n_clicks, description, store_data):
+def stage_scenario_request(n_clicks, n_submit, description, store_data):
     """Append the user message and a pending assistant bubble before parsing starts."""
+    if ctx.triggered_id not in {"btn-parse-scenario", "scenario-input"}:
+        return no_update, no_update, no_update
     if not description or not description.strip():
         state = _normalize_llm_studio_state(store_data)
         state["scenario"].update({
@@ -1729,12 +1762,15 @@ def clear_chat_conversation(n_clicks):
     Output("chat-interpret-request-store", "data"),
     Output("chat-input", "value"),
     Input("btn-chat-send", "n_clicks"),
+    Input("chat-input", "n_submit"),
     State("chat-input", "value"),
     State("chat-history-store", "data"),
     prevent_initial_call=True,
 )
-def stage_chat_request(n_clicks, question, chat_data):
+def stage_chat_request(n_clicks, n_submit, question, chat_data):
     """Append the user message and a pending assistant bubble before interpretation starts."""
+    if ctx.triggered_id not in {"btn-chat-send", "chat-input"}:
+        return no_update, no_update, no_update
     if not question or not question.strip():
         return no_update, no_update, no_update
 

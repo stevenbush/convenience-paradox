@@ -95,16 +95,22 @@ def test_llm_studio_parser_input_uses_session_persistence() -> None:
 
     scenario_tab = llm_studio._tab_scenario()
     intro = scenario_tab.children[0]
-    conversation_card = scenario_tab.children[1].children[0].children[0]
+    workspace_row = scenario_tab.children[1]
+    conversation_col = workspace_row.children[0]
+    conversation_card = conversation_col.children[0]
     card_body = conversation_card.children[1]
     textarea = card_body.children[1].children[0]
     actions = card_body.children[1].children[1]
 
     assert intro.className == "cp-scenario-guide"
+    assert "cp-llm-workspace" in workspace_row.className
+    assert "cp-llm-workspace__col" in conversation_col.className
+    assert "cp-llm-workspace__card--conversation" in conversation_card.className
     assert textarea.id == "scenario-input"
     assert "Describe daily life" in textarea.placeholder
     assert textarea.persistence is True
     assert textarea.persistence_type == "session"
+    assert textarea.submit_on_enter is True
     assert card_body.children[0].id == "scenario-thread"
     assert actions.children[0].id == "btn-parse-scenario"
     assert actions.children[1].id == "btn-clear-scenario"
@@ -118,16 +124,22 @@ def test_llm_studio_chat_tab_uses_conversation_layout() -> None:
 
     chat_tab = llm_studio._tab_chat()
     intro = chat_tab.children[0]
-    conversation_card = chat_tab.children[1].children[0].children[0]
+    workspace_row = chat_tab.children[1]
+    conversation_col = workspace_row.children[0]
+    conversation_card = conversation_col.children[0]
     card_body = conversation_card.children[1]
     textarea = card_body.children[1].children[0]
     actions = card_body.children[1].children[1]
 
     assert intro.className == "cp-scenario-guide"
+    assert "cp-llm-workspace" in workspace_row.className
+    assert "cp-llm-workspace__col" in conversation_col.className
+    assert "cp-llm-workspace__card--conversation" in conversation_card.className
     assert card_body.children[0].id == "chat-thread"
     assert textarea.id == "chat-input"
     assert textarea.persistence is True
     assert textarea.persistence_type == "session"
+    assert textarea.submit_on_enter is True
     assert actions.children[0].id == "btn-chat-send"
     assert actions.children[1].id == "btn-clear-chat"
 
@@ -341,18 +353,26 @@ def test_llm_studio_chat_context_panel_shows_current_snapshot() -> None:
     context_panel = llm_studio._build_chat_context_panel(chat_state)
 
     assert thread.className == "cp-chat"
-    assert context_panel.className == "cp-card"
+    assert "cp-card" in context_panel.className
+    assert "cp-llm-workspace__card--inspector" in context_panel.className
     header = context_panel.children[0]
     title_wrap = header.children[0]
     assert title_wrap.children[0].children == "Current Interpretation Context"
 
     body = context_panel.children[1]
-    assert body.children[1].children.startswith("This snapshot is injected")
-    metrics_table = body.children[3]
-    assert metrics_table.children.children[0].children[0].children == "Avg Stress"
-    params_table = body.children[5]
-    assert params_table.children.children[0].children[0].children == "Delegation Mean"
-    assert "context JSON" in body.children[7].children[0].children
+    summary_grid = body.children[1]
+    assert summary_grid.className == "cp-chat-context__grid"
+    assert summary_grid.children[0].children[0].children == "Current Step"
+    assert summary_grid.children[0].children[1].children == "18"
+    assert body.children[2].children.startswith("This snapshot is injected")
+    metrics_grid = body.children[4]
+    assert metrics_grid.className == "cp-chat-context__grid"
+    assert metrics_grid.children[0].children[0].children == "Avg Stress"
+    params_grid = body.children[6]
+    assert params_grid.className == "cp-chat-context__grid"
+    assert params_grid.children[0].children[0].children == "Delegation Mean"
+    assert body.children[7].children == "Prompt Context"
+    assert "context JSON" in body.children[8].children[0].children
 
 
 def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:
@@ -389,7 +409,8 @@ def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:
 
     assert llm_studio.restore_llm_studio_tab({"mounted": True}, store_data) == "tab-chat"
     assert thread.className == "cp-chat"
-    assert panel.className == "cp-card"
+    assert "cp-card" in panel.className
+    assert "cp-llm-workspace__card--inspector" in panel.className
 
     header = panel.children[0]
     title_wrap = header.children[0]

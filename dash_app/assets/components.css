@@ -261,6 +261,50 @@
 }
 
 
+/* --- Responsive LLM workspace panels --- */
+.cp-llm-workspace {
+  --cp-llm-panel-height: clamp(520px, calc(100vh - 300px), 980px);
+  align-items: stretch;
+}
+
+.cp-llm-workspace__col {
+  display: flex;
+}
+
+.cp-llm-workspace__slot {
+  width: 100%;
+  display: flex;
+}
+
+.cp-llm-workspace__slot > .cp-card,
+.cp-llm-workspace__col > .cp-card {
+  width: 100%;
+}
+
+.cp-llm-workspace__card {
+  width: 100%;
+  min-height: var(--cp-llm-panel-height);
+  display: flex;
+  flex-direction: column;
+}
+
+.cp-llm-workspace__card .cp-card__header {
+  flex-shrink: 0;
+}
+
+.cp-llm-workspace__card .cp-card__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cp-space-3);
+}
+
+.cp-llm-workspace__card--inspector .cp-card__body {
+  overflow-y: auto;
+}
+
+
 /* --- Scenario Parser Conversation --- */
 .cp-scenario-guide {
   display: flex;
@@ -287,8 +331,8 @@
 }
 
 .cp-scenario-thread {
-  height: 220px;
-  min-height: 180px;
+  flex: 1 1 auto;
+  min-height: clamp(240px, 34vh, 720px);
   overflow-y: auto;
   resize: vertical;
   border: 1px solid var(--cp-border);
@@ -298,11 +342,13 @@
 
 .cp-scenario-composer {
   margin-top: var(--cp-space-2);
+  flex-shrink: 0;
 }
 
 .cp-scenario__input {
-  min-height: 80px !important;
-  height: 80px !important;
+  min-height: 96px !important;
+  height: clamp(104px, 15vh, 220px) !important;
+  max-height: 34vh;
   resize: vertical !important;
 }
 
@@ -461,6 +507,38 @@
   color: var(--cp-text-secondary);
 }
 
+.cp-chat-context__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cp-space-2);
+  margin-top: var(--cp-space-2);
+}
+
+.cp-chat-context__chip {
+  padding: 10px 12px;
+  background: var(--cp-bg);
+  border: 1px solid var(--cp-border);
+  border-radius: var(--cp-radius-md);
+}
+
+.cp-chat-context__chip--accent {
+  background: linear-gradient(180deg, rgba(42, 139, 156, 0.08) 0%, var(--cp-bg) 100%);
+  border-color: rgba(42, 139, 156, 0.2);
+}
+
+.cp-chat-context__label {
+  font-size: var(--cp-text-xs);
+  color: var(--cp-text-tertiary);
+}
+
+.cp-chat-context__value {
+  margin-top: 4px;
+  font-size: var(--cp-text-sm);
+  font-weight: var(--cp-weight-semibold);
+  font-family: var(--cp-font-mono);
+  color: var(--cp-text-primary);
+}
+
 .cp-scenario__pending-description {
   padding: var(--cp-space-3) var(--cp-space-4);
   background: var(--cp-bg);
@@ -507,8 +585,49 @@
 }
 
 @media (max-width: 991.98px) {
+  .cp-llm-workspace {
+    --cp-llm-panel-height: auto;
+  }
+
+  .cp-llm-workspace__card {
+    min-height: auto;
+  }
+
+  .cp-llm-workspace__card .cp-card__body,
+  .cp-llm-workspace__card--inspector .cp-card__body {
+    overflow: visible;
+  }
+
   .cp-scenario-guide {
     padding: 10px 12px;
+  }
+
+  .cp-chat-context__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cp-scenario-thread {
+    min-height: 220px;
+  }
+
+  .cp-scenario__input {
+    height: clamp(96px, 18vh, 180px) !important;
+    max-height: 240px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .cp-llm-workspace {
+    --cp-llm-panel-height: auto;
+  }
+
+  .cp-scenario-thread {
+    min-height: 200px;
+  }
+
+  .cp-scenario__input {
+    min-height: 88px !important;
+    height: clamp(88px, 16vh, 160px) !important;
   }
 }
 
