@@ -1166,6 +1166,31 @@ def test_save_current_run_persists_active_preset(monkeypatch) -> None:
     assert saved_call["run_id"] == "17"
 
 
+def test_run_manager_exposes_manual_refresh_action() -> None:
+    """Run Manager should provide a manual refresh button near the run actions."""
+    create_app()
+    from dash_app.pages import run_manager
+
+    filter_bar = run_manager._filter_bar()
+    card_body = filter_bar.children[0]
+    action_row = card_body.children[2]
+    action_col = action_row.children[1]
+    action_bar = action_col.children[1]
+
+    assert action_bar.className == "cp-run-manager__action-bar"
+    assert action_bar.children[0].id == "btn-refresh-runs"
+    assert action_bar.children[0].children[1] == "Refresh"
+
+
+def test_run_manager_manual_refresh_bumps_refresh_trigger() -> None:
+    """Manual refresh should advance the grid trigger so the latest DB rows are reloaded."""
+    create_app()
+    from dash_app.pages.run_manager import refresh_runs
+
+    assert refresh_runs(1, 7) == 8
+    assert refresh_runs(1, None) == 1
+
+
 def test_save_current_run_rejects_empty_models(monkeypatch) -> None:
     """Saving without a simulated step should leave the grid untouched."""
     create_app()

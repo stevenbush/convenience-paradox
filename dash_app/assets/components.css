@@ -932,6 +932,7 @@ textarea::placeholder {
   line-height: 1;
 }
 
+.cp-run-manager__action-btn--refresh,
 .cp-run-manager__action-btn--save,
 .cp-run-manager__action-btn--update {
   min-width: 136px;

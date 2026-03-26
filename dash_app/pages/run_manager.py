@@ -101,6 +101,12 @@ def _filter_bar() -> html.Div:
                     html.Div("Run Actions", className="cp-run-manager__field-label"),
                     html.Div([
                         dbc.Button(
+                            [html.I(className="fas fa-rotate-right me-1"), "Refresh"],
+                            id="btn-refresh-runs",
+                            className="cp-btn-outline cp-run-manager__action-btn cp-run-manager__action-btn--refresh",
+                            size="sm",
+                        ),
+                        dbc.Button(
                             [html.I(className="fas fa-save me-1"), "Save Current"],
                             id="btn-save-run",
                             className="cp-btn-primary cp-run-manager__action-btn cp-run-manager__action-btn--save",
@@ -259,6 +265,19 @@ def load_runs(trigger, search, preset_filter, start_date, end_date):
         end_date=end_date,
     )
     return rows
+
+
+@callback(
+    Output("runs-refresh-trigger", "data", allow_duplicate=True),
+    Input("btn-refresh-runs", "n_clicks"),
+    State("runs-refresh-trigger", "data"),
+    prevent_initial_call=True,
+)
+def refresh_runs(n_clicks, current_trigger):
+    """Manually refresh the runs grid to pick up the latest database state."""
+    if not n_clicks:
+        return no_update
+    return int(current_trigger or 0) + 1
 
 
 # =========================================================================
