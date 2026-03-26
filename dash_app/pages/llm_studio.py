@@ -1813,6 +1813,28 @@ def _build_forum_group_participants(group: dict[str, Any] | None):
     return html.Div(chips, className="cp-chat-context__grid")
 
 
+def _forum_turn_sender_title(turn: dict[str, Any] | None) -> str:
+    """Use explicit resident IDs as the primary sender label in completed transcripts."""
+    turn = turn or {}
+    speaker_id = turn.get("speaker_id")
+    if speaker_id is not None:
+        return _forum_resident_short_label(speaker_id)
+    return str(turn.get("speaker_label") or "Resident")
+
+
+def _forum_turn_profile_label(turn: dict[str, Any] | None) -> str | None:
+    """Keep descriptive persona text as secondary metadata when available."""
+    turn = turn or {}
+    speaker_label = str(turn.get("speaker_label") or "").strip()
+    if not speaker_label:
+        return None
+
+    sender_title = _forum_turn_sender_title(turn)
+    if speaker_label.casefold() in {"resident", sender_title.casefold()}:
+        return None
+    return speaker_label
+
+
 def _build_forum_thread(group: dict[str, Any] | None):
     """Render one group transcript with a pending speaker bubble when active."""
     group = group or {}
@@ -1826,12 +1848,18 @@ def _build_forum_thread(group: dict[str, Any] | None):
         )
 
     for turn in turns:
+        turn_children = [
+            html.Div(_forum_turn_sender_title(turn), className="cp-chat__sender"),
+        ]
+        profile_label = _forum_turn_profile_label(turn)
+        if profile_label:
+            turn_children.append(
+                html.Div(profile_label, className="cp-forum__speaker-meta")
+            )
+        turn_children.append(html.Div(str(turn.get("content") or "")))
         bubbles.append(
             html.Div(
-                [
-                    html.Div(str(turn.get("speaker_label") or "Resident"), className="cp-chat__sender"),
-                    html.Div(str(turn.get("content") or "")),
-                ],
+                turn_children,
                 className="cp-chat__message cp-chat__message--ai cp-forum__message",
             )
         )
@@ -2050,6 +2078,13 @@ def _build_forum_group_detail(group: dict[str, Any] | None, *, forums_pending: b
                 className="cp-btn-outline cp-forum__rerun-btn",
                 size="sm",
                 disabled=forums_pending,
+            )
+        )
+        children.append(
+            html.Div(
+                "Reruns only this group's dialogue from the current simulation snapshot. "
+                "Other groups stay visible and unchanged while this group is regenerated.",
+                className="cp-scenario__composer-note cp-forum__rerun-note",
             )
         )
 

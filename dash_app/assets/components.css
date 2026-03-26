@@ -753,12 +753,23 @@
   max-width: min(92%, 720px);
 }
 
+.cp-forum__speaker-meta {
+  margin-bottom: 4px;
+  font-size: var(--cp-text-xs);
+  color: var(--cp-text-tertiary);
+  font-weight: var(--cp-weight-medium);
+}
+
 .cp-forum__message--pending {
   background: linear-gradient(180deg, rgba(42, 139, 156, 0.08) 0%, var(--cp-surface) 100%);
 }
 
 .cp-forum__rerun-btn {
   align-self: flex-start;
+}
+
+.cp-forum__rerun-note {
+  max-width: 30rem;
 }
 
 @media (max-width: 991.98px) {

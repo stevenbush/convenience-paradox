@@ -1613,6 +1613,56 @@ def test_llm_studio_forums_rehydrate_from_memory_state() -> None:
     assert "cp-forum__card" in first_card.className
 
 
+def test_llm_studio_forum_thread_uses_resident_ids_as_message_titles() -> None:
+    """Completed forum messages should lead with resident IDs instead of generic persona text."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    thread = llm_studio._build_forum_thread(
+        {
+            "status": "success",
+            "turns": [
+                {
+                    "speaker_id": 38,
+                    "speaker_label": "moderate service user",
+                    "content": "I would keep a small amount of paid help in the weekly routine.",
+                }
+            ],
+        }
+    )
+
+    first_message = thread.children[0]
+    assert first_message.children[0].children == "Resident #38"
+    assert first_message.children[1].children == "moderate service user"
+
+
+def test_llm_studio_forum_detail_explains_rerun_button_effect() -> None:
+    """Completed forum groups should explain what rerunning one group will do."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    detail = llm_studio._build_forum_group_detail(
+        {
+            "index": 0,
+            "status": "success",
+            "agent_ids": [38, 62],
+            "turn_cursor": 4,
+            "total_turns": 4,
+            "outcome": {
+                "norm_signal": 0.12,
+                "confidence": 0.61,
+                "summary": "The group leaned mildly toward delegation.",
+            },
+            "preference_updates": [],
+            "delta_applied": 0.0043,
+            "elapsed": 4.1,
+        }
+    )
+
+    assert detail.children[-2].children[1] == "Rerun This Group"
+    assert "Reruns only this group's dialogue" in detail.children[-1].children
+
+
 def test_llm_studio_record_audit_keeps_raw_input_and_output() -> None:
     """Session audit entries should retain inspectable raw input/output payloads."""
     create_app()
