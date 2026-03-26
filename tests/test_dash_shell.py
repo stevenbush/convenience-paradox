@@ -108,6 +108,28 @@ def test_app_layout_exposes_memory_store_for_llm_studio() -> None:
         if isinstance(child, dcc.Store) and child.id == "annotation-annotate-request-store"
     )
     assert annotation_queue.data is None
+    forum_store = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "forum-history-store"
+    )
+    assert forum_store.storage_type == "memory"
+    assert forum_store.data == {}
+    forum_queue = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "forum-run-request-store"
+    )
+    assert forum_queue.data is None
+    forum_dispatch = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "forum-run-dispatch-store"
+    )
+    assert forum_dispatch.data is None
+    forum_control = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "forum-control-store"
+    )
+    assert forum_control.storage_type == "memory"
+    assert forum_control.data == {}
     audit_snapshot = next(
         child for child in layout.children
         if isinstance(child, dcc.Store) and child.id == "audit-trigger-store"
@@ -225,6 +247,31 @@ def test_llm_studio_annotations_tab_uses_guided_workspace_layout() -> None:
     assert output.id == "annotations-output"
 
 
+def test_llm_studio_forums_tab_uses_guided_incremental_layout() -> None:
+    """Agent Forums should expose setup guidance, explicit actions, and a workspace slot."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    forums_tab = llm_studio._tab_forums()
+    intro = forums_tab.children[0]
+    setup_card = forums_tab.children[1]
+    output = forums_tab.children[2]
+
+    assert intro.className == "cp-scenario-guide"
+    assert intro.children[0].children == "How To Use Agent Forums"
+    assert "delegation norms" in intro.children[1].children
+    assert "cp-forum__setup-card" in setup_card.className
+    body = setup_card.children[1]
+    summary = body.children[1]
+    actions = body.children[2]
+    assert summary.id == "forum-plan-summary"
+    assert actions.className == "cp-scenario__composer-actions mt-3"
+    assert actions.children[0].id == "btn-run-forum"
+    assert actions.children[1].id == "btn-stop-forum"
+    assert actions.children[2].id == "btn-clear-forum"
+    assert output.id == "forum-output"
+
+
 def test_llm_studio_audit_tab_uses_guided_workspace_layout() -> None:
     """Audit Log should expose guidance, actions, table slot, and detail inspector slot."""
     create_app()
@@ -244,6 +291,24 @@ def test_llm_studio_audit_tab_uses_guided_workspace_layout() -> None:
     assert actions.children[1].id == "btn-clear-audit"
     assert table_slot.id == "audit-log-content"
     assert detail_slot.id == "audit-log-detail"
+
+
+def test_llm_studio_tabs_include_role_markers() -> None:
+    """LLM Studio tabs should expose compact role markers for quick mapping."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    tabs = llm_studio._tab_content()
+    labels = [tab.label for tab in tabs.children]
+
+    assert labels == [
+        "R1 · Scenario Parser",
+        "R3 · Chat Interpreter",
+        "R2 · Profile Generator",
+        "R4 · Annotations",
+        "R5 · Agent Forums",
+        "ALL · Audit Log",
+    ]
 
 
 def test_model_configuration_is_collapsed_by_default() -> None:
@@ -817,6 +882,737 @@ def test_llm_studio_ignores_annotation_click_while_request_is_pending(monkeypatc
     assert called["value"] is False
 
 
+def test_llm_studio_stages_forum_groups_before_running_llm(monkeypatch) -> None:
+    """Run Forum should stage groups immediately so pending discussions can render."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    class _Agent:
+        def __init__(self, unique_id):
+            self.unique_id = unique_id
+
+    fake_model = SimpleNamespace(current_step=14, agents=[_Agent(101), _Agent(202), _Agent(303), _Agent(404)])
+    monkeypatch.setattr(app_state, "get_model", lambda: fake_model)
+    monkeypatch.setattr(app_state, "get_role_model", lambda role: "qwen3.5:4b")
+    monkeypatch.setattr(
+        llm_studio,
+        "_build_forum_groups_snapshot",
+        lambda sim_model, fraction, agent_count, group_count, num_turns: (
+            [
+                {
+                    "id": "group-1",
+                    "index": 0,
+                    "agent_ids": [101, 202],
+                    "status": "active",
+                    "turns": [],
+                    "turn_cursor": 0,
+                    "total_turns": 4,
+                    "outcome": None,
+                    "delta_applied": 0.0,
+                    "preference_updates": [],
+                    "elapsed": 0.0,
+                    "error": None,
+                    "stop_note": None,
+                },
+                {
+                    "id": "group-2",
+                    "index": 1,
+                    "agent_ids": [303, 404],
+                    "status": "queued",
+                    "turns": [],
+                    "turn_cursor": 0,
+                    "total_turns": 4,
+                    "outcome": None,
+                    "delta_applied": 0.0,
+                    "preference_updates": [],
+                    "elapsed": 0.0,
+                    "error": None,
+                    "stop_note": None,
+                },
+            ],
+            {
+                "participant_count": 4,
+                "actual_group_count": 2,
+                "requested_group_count": 2,
+                "group_sizes": [2, 2],
+                "estimated_turns": 8,
+                "estimated_llm_calls": 10,
+            },
+        ),
+    )
+
+    state, request, control = llm_studio.stage_forum_request(1, 0.2, 0, 2, 2, {}, {})
+
+    assert state["status"] == "pending"
+    assert state["current_step"] == 14
+    assert state["group_count"] == 2
+    assert state["requested_group_count"] == 2
+    assert state["group_sizes"] == [2, 2]
+    assert state["estimated_llm_calls"] == 10
+    assert state["groups"][0]["status"] == "active"
+    assert state["groups"][1]["status"] == "queued"
+    assert request["request_id"] == state["request_id"]
+    assert request["group_index"] == 0
+    assert request["sequence"] == 0
+    assert control["request_id"] == state["request_id"]
+    assert control["stop_requested"] is False
+
+
+def test_llm_studio_clear_forum_resets_workspace() -> None:
+    """Clear Forums should wipe the staged groups and cancel any queued work."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    forum_state = {
+        "status": "success",
+        "request_id": "forum-1",
+        "groups": [
+            {
+                "id": "group-1",
+                "index": 0,
+                "agent_ids": [1, 2],
+                "status": "success",
+                "turns": [{"speaker_id": 1, "speaker_label": "Resident", "content": "I delegate when busy."}],
+                "turn_cursor": 2,
+                "total_turns": 2,
+                "outcome": {"norm_signal": 0.4, "confidence": 0.8, "summary": "The group leaned toward delegation."},
+                "delta_applied": 0.0192,
+                "preference_updates": [],
+                "elapsed": 2.1,
+                "error": None,
+            }
+        ],
+        "last_run_clicks": 1,
+    }
+
+    cleared_state, cleared_request, cleared_dispatch, cleared_control = llm_studio.clear_forum_output(1, forum_state)
+
+    assert cleared_request is None
+    assert cleared_dispatch is None
+    assert cleared_control["stop_requested"] is False
+    assert cleared_state["status"] == "idle"
+    assert cleared_state["groups"] == []
+    assert cleared_state["last_clear_clicks"] == 1
+
+
+def test_llm_studio_reruns_only_selected_forum_group(monkeypatch) -> None:
+    """Rerun This Group should restage only the selected group, not the whole forum."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    class _Agent:
+        def __init__(self, unique_id):
+            self.unique_id = unique_id
+
+    fake_model = SimpleNamespace(current_step=18, agents=[_Agent(101), _Agent(202), _Agent(303), _Agent(404)])
+    monkeypatch.setattr(app_state, "get_model", lambda: fake_model)
+
+    monkeypatch.setattr(
+        llm_studio,
+        "ctx",
+        SimpleNamespace(
+            triggered_id={"type": "forum-rerun-btn", "index": 1},
+            triggered=[{"value": 1}],
+        ),
+    )
+
+    forum_state = {
+        "status": "success",
+        "request_id": "forum-1",
+        "num_turns": 2,
+        "groups": [
+            {
+                "id": "group-1",
+                "index": 0,
+                "agent_ids": [101, 202],
+                "status": "success",
+                "turns": [{"speaker_id": 101, "speaker_label": "Resident", "content": "I delegate when busy."}],
+                "turn_cursor": 4,
+                "total_turns": 4,
+                "outcome": {"norm_signal": 0.2, "confidence": 0.7, "summary": "Group 1 leaned toward delegation."},
+                "delta_applied": 0.0084,
+                "preference_updates": [],
+                "elapsed": 2.8,
+                "error": None,
+                "last_rerun_clicks": 0,
+                "stop_note": None,
+            },
+            {
+                "id": "group-2",
+                "index": 1,
+                "agent_ids": [303, 404],
+                "status": "error",
+                "turns": [{"speaker_id": 303, "speaker_label": "Resident", "content": "I prefer handling chores myself."}],
+                "turn_cursor": 4,
+                "total_turns": 4,
+                "outcome": None,
+                "delta_applied": 0.0,
+                "preference_updates": [],
+                "elapsed": 2.1,
+                "error": "Error: timeout",
+                "last_rerun_clicks": 0,
+                "stop_note": None,
+            },
+        ],
+    }
+
+    state, request, control = llm_studio.rerun_forum_group([0, 1], forum_state, {})
+
+    assert state["status"] == "pending"
+    assert request["group_index"] == 1
+    assert request["sequence"] == 0
+    assert state["groups"][0]["status"] == "success"
+    assert state["groups"][1]["status"] == "active"
+    assert state["groups"][1]["turns"] == []
+    assert state["groups"][1]["turn_cursor"] == 0
+    assert state["groups"][1]["last_rerun_clicks"] == 1
+    assert control["stop_requested"] is False
+
+
+def test_llm_studio_reruns_first_forum_group_with_current_role_model(monkeypatch) -> None:
+    """The first forum group should rerun successfully and pick up the current Role 5 model."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    class _Agent:
+        def __init__(self, unique_id):
+            self.unique_id = unique_id
+
+    fake_model = SimpleNamespace(current_step=18, agents=[_Agent(101), _Agent(202), _Agent(303), _Agent(404)])
+    monkeypatch.setattr(app_state, "get_model", lambda: fake_model)
+    monkeypatch.setattr(app_state, "get_role_model", lambda role: "qwen3:1.7b")
+
+    monkeypatch.setattr(
+        llm_studio,
+        "ctx",
+        SimpleNamespace(
+            triggered_id={"type": "forum-rerun-btn", "index": 0},
+            triggered=[{"value": 1}],
+        ),
+    )
+
+    forum_state = {
+        "status": "success",
+        "request_id": "forum-1",
+        "model": "qwen3.5:4b",
+        "num_turns": 2,
+        "groups": [
+            {
+                "id": "group-1",
+                "index": 0,
+                "agent_ids": [101, 202],
+                "status": "success",
+                "turns": [{"speaker_id": 101, "speaker_label": "Resident", "content": "I delegate when busy."}],
+                "turn_cursor": 4,
+                "total_turns": 4,
+                "outcome": {"norm_signal": 0.2, "confidence": 0.7, "summary": "Group 1 leaned toward delegation."},
+                "delta_applied": 0.0084,
+                "preference_updates": [],
+                "elapsed": 2.8,
+                "error": None,
+                "last_rerun_clicks": 0,
+                "stop_note": None,
+            },
+            {
+                "id": "group-2",
+                "index": 1,
+                "agent_ids": [303, 404],
+                "status": "success",
+                "turns": [{"speaker_id": 303, "speaker_label": "Resident", "content": "I prefer handling chores myself."}],
+                "turn_cursor": 4,
+                "total_turns": 4,
+                "outcome": {"norm_signal": -0.1, "confidence": 0.6, "summary": "Group 2 leaned mildly toward autonomy."},
+                "delta_applied": -0.0036,
+                "preference_updates": [],
+                "elapsed": 2.1,
+                "error": None,
+                "last_rerun_clicks": 0,
+                "stop_note": None,
+            },
+        ],
+    }
+
+    state, request, control = llm_studio.rerun_forum_group([1, 0], forum_state, {})
+
+    assert state["status"] == "pending"
+    assert state["model"] == "qwen3:1.7b"
+    assert request["group_index"] == 0
+    assert request["model"] == "qwen3:1.7b"
+    assert state["groups"][0]["status"] == "active"
+    assert state["groups"][0]["turns"] == []
+    assert state["groups"][0]["turn_cursor"] == 0
+    assert state["groups"][0]["last_rerun_clicks"] == 1
+    assert state["groups"][1]["status"] == "success"
+    assert control["stop_requested"] is False
+
+
+def test_llm_studio_rejects_pending_forum_when_simulation_changes(monkeypatch) -> None:
+    """Pending forum work should abort if the staged simulation snapshot is no longer current."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    class _Agent:
+        def __init__(self, unique_id):
+            self.unique_id = unique_id
+
+    staged_model = SimpleNamespace(current_step=9, agents=[_Agent(101), _Agent(202)])
+    replacement_model = SimpleNamespace(current_step=0, agents=[_Agent(101), _Agent(202)])
+    monkeypatch.setattr(app_state, "get_model", lambda: replacement_model)
+    audit_calls: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(
+        llm_studio,
+        "_record_audit",
+        lambda *args, **kwargs: audit_calls.append((args, kwargs)),
+    )
+
+    forum_state = {
+        "status": "pending",
+        "request_id": "forum-1",
+        "model": "qwen3.5:4b",
+        "model_instance_id": id(staged_model),
+        "current_step": 9,
+        "groups": [
+            {
+                "id": "group-1",
+                "index": 0,
+                "agent_ids": [101, 202],
+                "status": "active",
+                "turns": [],
+                "turn_cursor": 0,
+                "total_turns": 2,
+                "outcome": None,
+                "delta_applied": 0.0,
+                "preference_updates": [],
+                "elapsed": 0.0,
+                "error": None,
+            }
+        ],
+    }
+
+    request = {"request_id": "forum-1", "group_index": 0, "model": "qwen3.5:4b", "sequence": 0}
+    llm_studio._forum_server_state = forum_state
+    llm_studio._forum_stop_requested = False
+    state, request = llm_studio.process_forum_request(1, request)
+
+    assert request is None
+    assert state["status"] == "error"
+    assert "changed after this forum was staged" in state["error"]
+    assert state["groups"][0]["turn_cursor"] == 0
+    assert len(audit_calls) == 1
+    assert audit_calls[0][0][0] == "Role 5"
+    assert audit_calls[0][0][1] == "agent_forums"
+    assert audit_calls[0][0][2] == "qwen3.5:4b"
+    assert "changed after this forum was staged" in str(audit_calls[0][0][6])
+
+
+def test_llm_studio_stops_group_rerun_after_selected_group_finishes(monkeypatch) -> None:
+    """Rerunning an early group should not continue into already completed later groups."""
+    create_app()
+    from dash_app.pages import llm_studio
+    from model.forums import DialogueTurn, ForumOutcome
+
+    class _Agent:
+        def __init__(self, unique_id):
+            self.unique_id = unique_id
+            self.delegation_preference = 0.5
+
+    agents = [_Agent(101), _Agent(202), _Agent(303), _Agent(404)]
+    fake_model = SimpleNamespace(current_step=12, agents=agents)
+    monkeypatch.setattr(app_state, "get_model", lambda: fake_model)
+    monkeypatch.setattr(app_state, "get_role_model", lambda role: "qwen3.5:4b")
+
+    forum_state = {
+        "status": "pending",
+        "request_id": "forum-2",
+        "model": "qwen3.5:4b",
+        "model_instance_id": id(fake_model),
+        "current_step": 12,
+        "forum_fraction": 0.2,
+        "requested_group_count": 2,
+        "group_count": 2,
+        "group_sizes": [2, 2],
+        "num_turns": 1,
+        "groups": [
+            {
+                "id": "group-1",
+                "index": 0,
+                "agent_ids": [101, 202],
+                "status": "waiting_outcome",
+                "turns": [{"speaker_id": 101, "speaker_label": "Resident", "content": "I outsource when time gets tight."}],
+                "turn_cursor": 1,
+                "total_turns": 1,
+                "outcome": None,
+                "delta_applied": 0.0,
+                "preference_updates": [],
+                "elapsed": 0.8,
+                "error": None,
+                "stop_note": None,
+            },
+            {
+                "id": "group-2",
+                "index": 1,
+                "agent_ids": [303, 404],
+                "status": "success",
+                "turns": [{"speaker_id": 303, "speaker_label": "Resident", "content": "I prefer doing chores myself."}],
+                "turn_cursor": 1,
+                "total_turns": 1,
+                "outcome": {"norm_signal": -0.2, "confidence": 0.6, "summary": "The group leaned toward autonomy."},
+                "delta_applied": -0.0072,
+                "preference_updates": [{"agent_id": 303, "before_preference": 0.5, "after_preference": 0.4928, "delta_applied": -0.0072}],
+                "elapsed": 1.1,
+                "error": None,
+                "stop_note": None,
+            },
+        ],
+    }
+
+    request = {"request_id": "forum-2", "group_index": 0, "model": "qwen3.5:4b", "sequence": 0}
+    apply_calls: list[list[int]] = []
+
+    monkeypatch.setattr(
+        llm_studio,
+        "_record_audit",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "model.forums.extract_forum_outcome_from_turns",
+        lambda *args, **kwargs: ForumOutcome(
+            norm_signal=0.2,
+            confidence=0.5,
+            summary="The rerun group leaned mildly toward delegation.",
+        ),
+    )
+
+    def _fake_apply(group_agents, outcome):
+        apply_calls.append([agent.unique_id for agent in group_agents])
+        return 0.006, [{"agent_id": agent.unique_id} for agent in group_agents]
+
+    monkeypatch.setattr("model.forums.apply_forum_outcome", _fake_apply)
+    monkeypatch.setattr(
+        "model.forums.run_forum_turn",
+        lambda *args, **kwargs: DialogueTurn(
+            speaker_id=101,
+            speaker_label="Resident",
+            content="I would delegate routine errands this week.",
+        ),
+    )
+
+    llm_studio._forum_server_state = forum_state
+    llm_studio._forum_stop_requested = False
+    state, next_request = llm_studio.process_forum_request(1, request)
+
+    assert next_request is None
+    assert state["status"] == "success"
+    assert state["groups"][0]["status"] == "success"
+    assert state["groups"][1]["status"] == "success"
+    assert state["groups"][1]["outcome"]["summary"] == "The group leaned toward autonomy."
+    assert apply_calls == [[101, 202]]
+
+
+def test_llm_studio_replays_forum_snapshot_when_poll_overlaps_active_turn() -> None:
+    """Concurrent poll ticks should replay the current server snapshot instead of dropping UI updates."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    forum_state = {
+        "status": "pending",
+        "request_id": "forum-overlap-1",
+        "model": "qwen3.5:4b",
+        "current_step": 12,
+        "groups": [
+            {
+                "id": "group-1",
+                "index": 0,
+                "agent_ids": [101, 202],
+                "status": "active",
+                "turns": [
+                    {
+                        "speaker_id": 101,
+                        "speaker_label": "Resident #101",
+                        "content": "I delegate routine errands when my schedule gets tight.",
+                    }
+                ],
+                "turn_cursor": 1,
+                "total_turns": 4,
+                "outcome": None,
+                "delta_applied": 0.0,
+                "preference_updates": [],
+                "elapsed": 2.4,
+                "error": None,
+                "stop_note": None,
+            }
+        ],
+    }
+    request = {
+        "request_id": "forum-overlap-1",
+        "group_index": 0,
+        "model": "qwen3.5:4b",
+        "sequence": 1,
+    }
+
+    llm_studio._forum_server_state = forum_state
+    llm_studio._forum_stop_requested = False
+    assert llm_studio._forum_lock.acquire(blocking=False)
+    try:
+        state, next_request = llm_studio.process_forum_request(2, request)
+    finally:
+        llm_studio._forum_lock.release()
+
+    assert next_request == request
+    assert state["status"] == "pending"
+    assert state["groups"][0]["turn_cursor"] == 1
+    assert state["groups"][0]["turns"][0]["content"].startswith("I delegate routine errands")
+
+
+def test_llm_studio_rehydrates_terminal_forum_state_when_client_request_is_stale() -> None:
+    """A stale browser request should be reconciled with the authoritative terminal server state."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    forum_state = {
+        "status": "success",
+        "request_id": "forum-final-1",
+        "model": "qwen3.5:4b",
+        "current_step": 12,
+        "groups": [
+            {
+                "id": "group-1",
+                "index": 0,
+                "agent_ids": [101, 202],
+                "status": "success",
+                "turns": [
+                    {
+                        "speaker_id": 101,
+                        "speaker_label": "Resident #101",
+                        "content": "I delegate routine errands when my schedule gets tight.",
+                    },
+                    {
+                        "speaker_id": 202,
+                        "speaker_label": "Resident #202",
+                        "content": "I still prefer keeping some chores in-house.",
+                    },
+                ],
+                "turn_cursor": 2,
+                "total_turns": 2,
+                "outcome": {
+                    "norm_signal": 0.12,
+                    "confidence": 0.61,
+                    "summary": "The group leaned mildly toward delegation.",
+                },
+                "delta_applied": 0.0043,
+                "preference_updates": [],
+                "elapsed": 4.1,
+                "error": None,
+                "stop_note": None,
+            }
+        ],
+    }
+    request = {
+        "request_id": "forum-final-1",
+        "group_index": 0,
+        "model": "qwen3.5:4b",
+        "sequence": 2,
+    }
+
+    llm_studio._forum_server_state = forum_state
+    llm_studio._forum_stop_requested = False
+    state, next_request = llm_studio.process_forum_request(3, request)
+
+    assert next_request is None
+    assert state["status"] == "success"
+    assert state["groups"][0]["status"] == "success"
+    assert state["groups"][0]["outcome"]["summary"] == "The group leaned mildly toward delegation."
+
+
+def test_llm_studio_forum_scale_summary_reflects_requested_group_count(monkeypatch) -> None:
+    """Forum scale preview should expose invited agents, groups, and estimated LLM load."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    class _Agent:
+        def __init__(self, unique_id):
+            self.unique_id = unique_id
+
+    fake_model = SimpleNamespace(current_step=8, agents=[_Agent(i) for i in range(20)])
+    monkeypatch.setattr(app_state, "get_model", lambda: fake_model)
+
+    summary = llm_studio.render_forum_plan_summary(0.25, 0, 3, 2, {"step": 8}, 1)
+
+    assert "cp-forum__plan-summary" in summary.className
+    assert summary.children[1].className == "cp-chat-context__grid"
+    values = {str(chip.children[1].children) for chip in summary.children[1].children}
+    assert "20" in values
+    assert "5" in values
+    assert "3" in values
+
+
+def test_llm_studio_forum_scale_summary_honors_exact_agent_override(monkeypatch) -> None:
+    """Exact agent count should override the fraction-derived participant count in the preview."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    class _Agent:
+        def __init__(self, unique_id):
+            self.unique_id = unique_id
+
+    fake_model = SimpleNamespace(current_step=8, agents=[_Agent(i) for i in range(40)])
+    monkeypatch.setattr(app_state, "get_model", lambda: fake_model)
+
+    summary = llm_studio.render_forum_plan_summary(0.25, 6, 2, 2, {"step": 8}, 1)
+
+    badges = " ".join(str(child.children) for child in summary.children[0].children)
+    values = {str(chip.children[1].children) for chip in summary.children[1].children}
+    assert "Exact participant count" in badges
+    assert "6" in values
+
+
+def test_forum_group_planning_caps_group_size_for_readability() -> None:
+    """Forum planning should keep each group within the readable dashboard group size cap."""
+    from model.forums import MAX_FORUM_GROUP_SIZE, plan_forum_groups
+
+    plan = plan_forum_groups(100, forum_fraction=0.4, group_count=2)
+
+    assert max(plan["group_sizes"]) <= MAX_FORUM_GROUP_SIZE
+    assert plan["participant_count_adjusted"] is True
+
+
+def test_llm_studio_stop_forum_gracefully_finalizes_partial_results(monkeypatch) -> None:
+    """Stop Forum should finish the current turn, summarize partial dialogue, and stop queued groups."""
+    create_app()
+    from dash_app.pages import llm_studio
+    from model.forums import ForumOutcome
+
+    class _Agent:
+        def __init__(self, unique_id):
+            self.unique_id = unique_id
+            self.delegation_preference = 0.5
+
+    agents = [_Agent(101), _Agent(202), _Agent(303), _Agent(404)]
+    fake_model = SimpleNamespace(current_step=15, agents=agents)
+    monkeypatch.setattr(app_state, "get_model", lambda: fake_model)
+    monkeypatch.setattr(llm_studio, "_record_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "model.forums.extract_forum_outcome_from_turns",
+        lambda *args, **kwargs: ForumOutcome(
+            norm_signal=0.1,
+            confidence=0.6,
+            summary="The partial dialogue still leaned mildly toward delegation.",
+        ),
+    )
+    monkeypatch.setattr(
+        "model.forums.apply_forum_outcome",
+        lambda group_agents, outcome: (
+            0.0036,
+            [{"agent_id": agent.unique_id} for agent in group_agents],
+        ),
+    )
+
+    forum_state = {
+        "status": "pending",
+        "request_id": "forum-stop-1",
+        "model": "qwen3.5:4b",
+        "model_instance_id": id(fake_model),
+        "current_step": 15,
+        "forum_fraction": 0.2,
+        "requested_group_count": 2,
+        "group_count": 2,
+        "group_sizes": [2, 2],
+        "num_turns": 2,
+        "groups": [
+            {
+                "id": "group-1",
+                "index": 0,
+                "agent_ids": [101, 202],
+                "status": "active",
+                "turns": [{"speaker_id": 101, "speaker_label": "Resident", "content": "I delegate chores when my work week is overloaded."}],
+                "turn_cursor": 1,
+                "total_turns": 4,
+                "outcome": None,
+                "delta_applied": 0.0,
+                "preference_updates": [],
+                "elapsed": 1.0,
+                "error": None,
+                "stop_note": None,
+            },
+            {
+                "id": "group-2",
+                "index": 1,
+                "agent_ids": [303, 404],
+                "status": "queued",
+                "turns": [],
+                "turn_cursor": 0,
+                "total_turns": 4,
+                "outcome": None,
+                "delta_applied": 0.0,
+                "preference_updates": [],
+                "elapsed": 0.0,
+                "error": None,
+                "stop_note": None,
+            },
+        ],
+    }
+    request = {"request_id": "forum-stop-1", "group_index": 0, "model": "qwen3.5:4b", "sequence": 3}
+
+    llm_studio._forum_server_state = forum_state
+    llm_studio._forum_stop_requested = True
+    state, next_request = llm_studio.process_forum_request(1, request)
+
+    assert next_request is None
+    assert state["status"] == "stopped"
+    assert state["groups"][0]["status"] == "stopped"
+    assert state["groups"][0]["outcome"]["summary"] == "The partial dialogue still leaned mildly toward delegation."
+    assert state["groups"][1]["status"] == "stopped"
+    assert "Skipped because the forum was stopped" in state["groups"][1]["stop_note"]
+
+
+def test_llm_studio_forums_rehydrate_from_memory_state() -> None:
+    """Agent Forums should rebuild the generated workspace after page navigation."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    forum_state = {
+        "status": "success",
+        "current_step": 21,
+        "forum_fraction": 0.2,
+        "requested_group_count": 2,
+        "num_turns": 2,
+        "agent_count": 4,
+        "group_count": 2,
+        "group_sizes": [2, 2],
+        "model": "qwen3.5:4b",
+        "groups": [
+            {
+                "id": "group-1",
+                "index": 0,
+                "agent_ids": [101, 202],
+                "status": "success",
+                "turns": [
+                    {"speaker_id": 101, "speaker_label": "busy professional", "content": "I outsource when my schedule gets tight."},
+                    {"speaker_id": 202, "speaker_label": "self-reliant resident", "content": "I still prefer doing most tasks myself."},
+                ],
+                "turn_cursor": 4,
+                "total_turns": 4,
+                "outcome": {"norm_signal": 0.15, "confidence": 0.62, "summary": "The group modestly favoured delegation."},
+                "delta_applied": 0.0056,
+                "preference_updates": [
+                    {"agent_id": 101, "before_preference": 0.5, "after_preference": 0.5056, "delta_applied": 0.0056},
+                    {"agent_id": 202, "before_preference": 0.41, "after_preference": 0.4156, "delta_applied": 0.0056},
+                ],
+                "elapsed": 3.4,
+                "error": None,
+                "stop_note": None,
+            }
+        ],
+    }
+
+    rendered = llm_studio.render_forum_output(forum_state, 1)
+
+    assert rendered.children[1].className == "cp-chat-context__grid"
+    assert rendered.children[3].className == "cp-forum__list"
+    first_card = rendered.children[3].children[0]
+    assert "cp-forum__card" in first_card.className
+
+
 def test_llm_studio_record_audit_keeps_raw_input_and_output() -> None:
     """Session audit entries should retain inspectable raw input/output payloads."""
     create_app()
@@ -1189,6 +1985,140 @@ def test_run_manager_manual_refresh_bumps_refresh_trigger() -> None:
 
     assert refresh_runs(1, 7) == 8
     assert refresh_runs(1, None) == 1
+
+
+def test_run_manager_comparison_panel_uses_explicit_controls() -> None:
+    """Comparison should expose run summary, metric picker, compare button, and clear button."""
+    create_app()
+    from dash_app.pages import run_manager
+
+    panel = run_manager._comparison_panel()
+    comparison_card = panel.children
+    card_body = comparison_card.children[1]
+    control_row = card_body.children[0]
+    selection_col, metric_col, action_col = control_row.children
+    action_bar = action_col.children[1]
+
+    assert selection_col.children[1].id == "run-comparison-selection-summary"
+    metric_picker = metric_col.children[1]
+    assert metric_picker.id == "run-compare-metric"
+    assert metric_col.children[2].id == "run-compare-metric-help"
+    assert action_bar.children[0].id == "btn-run-compare"
+    assert action_bar.children[1].id == "btn-clear-comparison"
+    assert card_body.children[1].id == "run-comparison-results"
+
+
+def test_manage_run_comparison_normalizes_progress_for_unequal_run_lengths(monkeypatch) -> None:
+    """Runs with different step counts should compare on normalized progress."""
+    create_app()
+    from dash_app.pages import run_manager
+
+    monkeypatch.setattr(run_manager, "ctx", SimpleNamespace(triggered_id="btn-run-compare"))
+    monkeypatch.setattr(
+        db,
+        "get_run_detail",
+        lambda run_id: {
+            "steps": (
+                [
+                    {"step": 1, "avg_stress": 0.10},
+                    {"step": 2, "avg_stress": 0.20},
+                    {"step": 3, "avg_stress": 0.30},
+                ]
+                if run_id == 11
+                else [
+                    {"step": 1, "avg_stress": 0.15},
+                    {"step": 2, "avg_stress": 0.18},
+                ]
+            )
+        },
+    )
+
+    state, selected_rows, metric_value = run_manager.manage_run_comparison(
+        1,
+        None,
+        [
+            {"id": 11, "label": "Alpha"},
+            {"id": 12, "label": "Beta"},
+        ],
+        "avg_stress",
+    )
+
+    assert state["status"] == "success"
+    assert state["x_field"] == "progress"
+    assert "normalized progress" in state["comparison_note"].lower()
+    assert round(state["runs"][0]["mean_value"], 3) == 0.200
+    assert round(state["runs"][1]["mean_value"], 3) == 0.165
+    assert selected_rows is no_update
+    assert metric_value is no_update
+
+
+def test_manage_run_comparison_clear_resets_selection_and_metric(monkeypatch) -> None:
+    """Clear should wipe the explicit comparison state and reset the controls."""
+    create_app()
+    from dash_app.pages import run_manager
+
+    monkeypatch.setattr(run_manager, "ctx", SimpleNamespace(triggered_id="btn-clear-comparison"))
+
+    state, selected_rows, metric_value = run_manager.manage_run_comparison(
+        None,
+        1,
+        [{"id": 11, "label": "Alpha"}],
+        "avg_stress",
+    )
+
+    assert state is None
+    assert selected_rows == []
+    assert metric_value is None
+
+
+def test_manage_run_comparison_rejects_more_than_max_selected_runs(monkeypatch) -> None:
+    """Comparison should fail fast when more than the supported run count is selected."""
+    create_app()
+    from dash_app.pages import run_manager
+
+    monkeypatch.setattr(run_manager, "ctx", SimpleNamespace(triggered_id="btn-run-compare"))
+
+    lookup_calls: list[int] = []
+
+    def _unexpected_lookup(run_id: int) -> dict:
+        lookup_calls.append(run_id)
+        return {"steps": [{"step": 1, "avg_stress": 0.1}]}
+
+    monkeypatch.setattr(db, "get_run_detail", _unexpected_lookup)
+
+    selected = [
+        {"id": run_id, "label": f"Run {run_id}"}
+        for run_id in range(1, run_manager.MAX_COMPARISON_RUNS + 2)
+    ]
+    state, selected_rows, metric_value = run_manager.manage_run_comparison(
+        1,
+        None,
+        selected,
+        "avg_stress",
+    )
+
+    assert state["status"] == "error"
+    assert "no more than" in state["error"].lower()
+    assert lookup_calls == []
+    assert selected_rows is no_update
+    assert metric_value is no_update
+
+
+def test_invalidate_run_comparison_clears_cached_results_on_grid_change() -> None:
+    """Any grid or filter change should discard the last explicit comparison snapshot."""
+    create_app()
+    from dash_app.pages import run_manager
+
+    assert run_manager.invalidate_run_comparison(
+        [{"id": 11, "label": "Alpha"}],
+        [{"id": 11, "run_name": "Alpha"}],
+        "avg_stress",
+        3,
+        "alpha",
+        "type_a",
+        "2026-03-01",
+        "2026-03-26",
+    ) is None
 
 
 def test_save_current_run_rejects_empty_models(monkeypatch) -> None:

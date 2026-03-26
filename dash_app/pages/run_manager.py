@@ -8,8 +8,9 @@ Callback architecture:
     - On page load and after mutations, the runs-grid is repopulated from SQLite.
     - Filter controls (search, preset, date range) feed into the query.
     - Delete operations cascade to both runs and run_steps tables.
-    - The comparison panel activates when 2+ runs are selected in the grid,
-      showing metric deltas and overlaid time series.
+    - The comparison panel exposes explicit controls: choose runs in the grid,
+      pick one metric, then click Compare to render the average-value summary
+      and the aligned trend chart.
 
 Goals served: A (interactive application), B (data management front-end)
 """
@@ -25,6 +26,7 @@ import plotly.graph_objects as go
 from dash import html, dcc, callback, Input, Output, State, ctx, no_update
 
 from dash_app.components.card import card, kpi_card
+from dash_app.components.badges import status_badge
 from dash_app.components.charts import CHART_COLORWAY
 from dash_app.components.empty_states import empty_state
 import dash_app.db as db
@@ -39,6 +41,53 @@ dash.register_page(
     name="Run Manager",
     order=2,
 )
+
+RUN_COMPARISON_METRICS = [
+    {
+        "key": "avg_stress",
+        "label": "Avg Stress",
+        "format": ".3f",
+        "yaxis": "Stress",
+        "description": "Average time pressure carried by agents during the run. Higher values indicate more overload.",
+    },
+    {
+        "key": "total_labor_hours",
+        "label": "Labor Hours",
+        "format": ".1f",
+        "yaxis": "Hours",
+        "description": "Total system-wide labor performed at each step, including service provision for others.",
+    },
+    {
+        "key": "social_efficiency",
+        "label": "Social Efficiency",
+        "format": ".3f",
+        "yaxis": "Tasks / Hour",
+        "description": "How many tasks the society completes per unit of labor. Higher values indicate better coordination.",
+    },
+    {
+        "key": "avg_delegation_rate",
+        "label": "Delegation Rate",
+        "format": ".3f",
+        "yaxis": "Delegation Share",
+        "description": "Share of tasks that agents delegate instead of handling themselves.",
+    },
+    {
+        "key": "unmatched_tasks",
+        "label": "Unmatched Tasks",
+        "format": ".1f",
+        "yaxis": "Tasks",
+        "description": "Delegated tasks that the system fails to match with a provider. Higher values suggest market strain.",
+    },
+    {
+        "key": "avg_income",
+        "label": "Avg Income",
+        "format": ".2f",
+        "yaxis": "Income",
+        "description": "Average net income across agents over time, combining earnings and service spending.",
+    },
+]
+
+MAX_COMPARISON_RUNS = 6
 
 
 
@@ -183,20 +232,256 @@ def _runs_table() -> html.Div:
     )
 
 
+def _comparison_metric_options() -> list[dict[str, str]]:
+    """Return dropdown options for the one-metric-at-a-time comparison control."""
+    return [
+        {"label": metric["label"], "value": metric["key"]}
+        for metric in RUN_COMPARISON_METRICS
+    ]
+
+
+def _comparison_metric_map() -> dict[str, dict[str, str]]:
+    """Lookup table for comparison metric metadata."""
+    return {metric["key"]: metric for metric in RUN_COMPARISON_METRICS}
+
+
+def _comparison_empty_card(title: str, message: str) -> html.Div:
+    """Return a consistent empty-state card for the comparison results area."""
+    return card(
+        title=title,
+        subtitle="Compare one metric across selected runs",
+        children=empty_state(
+            icon="fas fa-code-compare",
+            title=title,
+            message=message,
+        ),
+        class_name="cp-run-manager__comparison-card",
+    )
+
+
 def _comparison_panel() -> html.Div:
-    """Comparison panel — shown when 2+ runs are selected."""
+    """Comparison workspace — explicit controls plus results area."""
     return html.Div(
         id="run-comparison-panel",
         children=card(
             title="Comparison",
-            subtitle="Select 2 or more runs to compare",
-            children=empty_state(
-                icon="fas fa-code-compare",
-                title="No runs selected",
-                message="Check the boxes next to runs in the table above to compare their metrics.",
-            ),
+            subtitle="Select runs, choose one metric, then click Compare",
+            children=[
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.Div("Selected Runs", className="cp-run-manager__field-label"),
+                                html.Div(
+                                    id="run-comparison-selection-summary",
+                                    className="cp-run-manager__selection-summary",
+                                ),
+                            ],
+                            lg=5,
+                            md=12,
+                        ),
+                        dbc.Col(
+                            [
+                                html.Label("Comparison Metric", className="cp-run-manager__field-label"),
+                                dcc.Dropdown(
+                                    id="run-compare-metric",
+                                    options=_comparison_metric_options(),
+                                    placeholder="Choose one metric to compare...",
+                                    clearable=True,
+                                    style={"fontSize": "var(--cp-text-sm)"},
+                                ),
+                                html.Div(
+                                    id="run-compare-metric-help",
+                                    className="cp-run-manager__compare-help",
+                                ),
+                            ],
+                            lg=4,
+                            md=12,
+                        ),
+                        dbc.Col(
+                            [
+                                html.Div("Compare Actions", className="cp-run-manager__field-label"),
+                                html.Div(
+                                    [
+                                        dbc.Button(
+                                            [html.I(className="fas fa-code-compare me-1"), "Compare"],
+                                            id="btn-run-compare",
+                                            className="cp-btn-primary cp-run-manager__action-btn cp-run-manager__action-btn--compare",
+                                            size="sm",
+                                        ),
+                                        dbc.Button(
+                                            [html.I(className="fas fa-eraser me-1"), "Clear"],
+                                            id="btn-clear-comparison",
+                                            className="cp-btn-outline cp-run-manager__action-btn cp-run-manager__action-btn--clear",
+                                            size="sm",
+                                        ),
+                                    ],
+                                    className="cp-run-manager__action-bar cp-run-manager__action-bar--compare",
+                                ),
+                            ],
+                            lg=3,
+                            md=12,
+                        ),
+                    ],
+                    className="g-3 align-items-start",
+                ),
+                html.Div(id="run-comparison-results", className="mt-3"),
+            ],
             card_id="comparison-card",
         ),
+    )
+
+
+def _comparison_metric_help(metric_key: str | None) -> str:
+    """Return helper text explaining the currently selected comparison metric."""
+    if not metric_key:
+        labels = ", ".join(metric["label"] for metric in RUN_COMPARISON_METRICS)
+        return f"Available metrics: {labels}. Choose one metric, then click Compare."
+    metric = _comparison_metric_map().get(metric_key)
+    if not metric:
+        return "Choose one metric, then click Compare."
+    return f"{metric['label']}: {metric['description']}"
+
+
+def _selected_run_summary(selected: list[dict] | None):
+    """Render compact chips summarising which runs are currently selected."""
+    selected = selected or []
+    if not selected:
+        return html.Div(
+            "No runs selected yet. Choose at least 2 runs from the table above.",
+            className="cp-run-manager__compare-help",
+        )
+
+    chips = []
+    visible_rows = selected[:MAX_COMPARISON_RUNS]
+    for row in visible_rows:
+        label = format_run_label(row)
+        chips.append(
+            html.Div(
+                [
+                    html.Span(f"#{row['id']}", className="cp-chat-context__label"),
+                    html.Div(label, className="cp-chat-context__value"),
+                ],
+                className="cp-chat-context__chip",
+            )
+        )
+
+    children = [html.Div(chips, className="cp-chat-context__grid")]
+    hidden_count = len(selected) - len(visible_rows)
+    if hidden_count > 0:
+        children.append(
+            html.Div(
+                f"Showing the first {MAX_COMPARISON_RUNS} of {len(selected)} selected runs. Narrow the selection before comparing.",
+                className="cp-run-manager__compare-help",
+            )
+        )
+    return html.Div(children)
+
+
+def _build_comparison_trend_figure(compare_state: dict[str, object]) -> go.Figure:
+    """Build the comparison trend figure for the current comparison state."""
+    metric = compare_state["metric"]
+    runs = compare_state["runs"]
+    fmt = metric["format"]
+
+    x_field = compare_state["x_field"]
+    trend_fig = go.Figure()
+    for run in runs:
+        trend_fig.add_trace(go.Scatter(
+            x=[point[x_field] for point in run["series"]],
+            y=[point["value"] for point in run["series"]],
+            mode="lines",
+            name=run["label"],
+            line=dict(color=run["color"], width=2),
+            hovertemplate=(
+                "Run: %{fullData.name}<br>"
+                + ("Progress: %{x:.0f}%<br>" if x_field == "progress" else "Step: %{x}<br>")
+                + f"{metric['label']}: %{{y:{fmt}}}<extra></extra>"
+            ),
+        ))
+
+    trend_fig.update_layout(
+        xaxis_title="Normalized Progress (%)" if x_field == "progress" else "Step",
+        yaxis_title=metric["yaxis"],
+        margin=dict(t=10, b=40, l=56, r=16),
+        height=320,
+        legend=dict(orientation="h", y=1.12, x=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    if x_field == "progress":
+        trend_fig.update_xaxes(range=[0, 100])
+
+    return trend_fig
+
+
+def _build_comparison_results(compare_state: dict | None):
+    """Render the comparison result area from the last explicit Compare action."""
+    if not isinstance(compare_state, dict):
+        return _comparison_empty_card(
+            "Compare Selected Runs",
+            "Choose at least 2 runs, pick one metric, then click Compare to generate the side-by-side view.",
+        )
+
+    status = compare_state.get("status")
+    if status == "error":
+        return _comparison_empty_card(
+            "Comparison Not Ready",
+            str(compare_state.get("error") or "Choose at least 2 runs and one metric before comparing."),
+        )
+
+    metric = compare_state["metric"]
+    runs = compare_state["runs"]
+    trend_fig = _build_comparison_trend_figure(compare_state)
+    avg_cards = [
+        dbc.Col(
+            kpi_card(
+                run["label"],
+                format(run["mean_value"], metric["format"]),
+                delta=f"Steps: {run['step_count']}",
+                delta_direction="neutral",
+            ),
+            xl=3,
+            lg=4,
+            md=6,
+            xs=12,
+        )
+        for run in runs
+    ]
+
+    note_variant = "info" if compare_state.get("x_field") == "progress" else "neutral"
+    note_text = compare_state.get("comparison_note") or (
+        "All selected runs share the same step span, so the trend chart uses the native simulation step axis."
+    )
+
+    return card(
+        title=f"{metric['label']} Comparison",
+        subtitle="Explicit comparison generated from the selected runs",
+        children=[
+            html.Div(
+                [
+                    html.Span(note_text, className="cp-run-manager__compare-help"),
+                    status_badge(
+                        "Normalized for unequal step counts" if compare_state.get("x_field") == "progress" else "Native step axis",
+                        note_variant,
+                    ),
+                ],
+                className="cp-run-manager__compare-note",
+            ),
+            html.Div("Average Value By Run", className="cp-run-manager__field-label"),
+            dbc.Row(avg_cards, className="g-2 mb-2"),
+            html.Div("Metric Trend Over Time", className="cp-run-manager__field-label mt-2"),
+            html.Div(
+                dcc.Graph(
+                    figure=trend_fig,
+                    config={"displayModeBar": True, "displaylogo": False, "responsive": True},
+                    style={"width": "100%", "height": "320px"},
+                ),
+                className="cp-chart-container",
+                style={"height": "320px"},
+            ),
+        ],
+        class_name="cp-run-manager__comparison-card",
     )
 
 
@@ -226,6 +511,7 @@ _save_toast = dbc.Toast(
 layout = html.Div([
     # Hidden store to trigger grid refresh after mutations
     dcc.Store(id="runs-refresh-trigger", data=0),
+    dcc.Store(id="run-comparison-store", data=None),
 
     html.Div([
         html.H2("Run Manager", className="cp-page-title"),
@@ -393,99 +679,151 @@ def execute_delete(n_clicks, selected):
 
 
 # =========================================================================
-# Callback 5: Comparison panel
+# Callback 5: Comparison controls
 # =========================================================================
 
 @callback(
-    Output("run-comparison-panel", "children"),
+    Output("run-comparison-selection-summary", "children"),
+    Output("run-compare-metric-help", "children"),
+    Output("btn-run-compare", "disabled"),
+    Output("btn-clear-comparison", "disabled"),
     Input("runs-grid", "selectedRows"),
+    Input("run-compare-metric", "value"),
 )
-def update_comparison(selected):
-    if not selected or len(selected) < 2:
-        return card(
-            title="Comparison",
-            subtitle="Select 2 or more runs to compare",
-            children=empty_state(
-                icon="fas fa-code-compare",
-                title="No runs selected" if not selected else "Select at least 2 runs",
-                message="Check the boxes next to runs in the table above to compare their metrics.",
-            ),
-            card_id="comparison-card",
-        )
-
-    metrics = [
-        ("final_avg_stress", "Avg Stress", ".3f"),
-        ("final_total_labor_hours", "Labor Hours", ".1f"),
-        ("final_social_efficiency", "Efficiency", ".3f"),
-        ("final_avg_delegation_rate", "Delegation Rate", ".3f"),
-    ]
-
-    # Build metric comparison cards
-    metric_cols = []
-    for key, label, fmt in metrics:
-        values = [r.get(key) for r in selected if r.get(key) is not None]
-        if values:
-            min_v, max_v = min(values), max(values)
-            spread = max_v - min_v
-            display = f"{min_v:{fmt}} – {max_v:{fmt}}"
-            delta_str = f"Spread: {spread:{fmt}}"
-        else:
-            display = "—"
-            delta_str = None
-        metric_cols.append(
-            dbc.Col(
-                kpi_card(label, display, delta=delta_str, delta_direction="neutral"),
-                md=3, xs=6,
-            )
-        )
-
-    # Build overlay time series for selected runs
-    overlay_fig = go.Figure()
-    chart_metrics_to_plot = [
-        ("avg_stress", "Stress"),
-        ("total_labor_hours", "Labor Hours"),
-    ]
-
-    for i, run_row in enumerate(selected[:6]):
-        run_detail = db.get_run_detail(run_row["id"])
-        if run_detail and run_detail.get("steps"):
-            steps_data = run_detail["steps"]
-            step_nums = [s.get("step", j) for j, s in enumerate(steps_data)]
-
-            color = CHART_COLORWAY[i % len(CHART_COLORWAY)]
-            run_label = format_run_label(run_row)
-
-            stress_vals = [s.get("avg_stress", 0) for s in steps_data]
-            overlay_fig.add_trace(go.Scatter(
-                x=step_nums, y=stress_vals,
-                mode="lines",
-                name=f"#{run_row['id']} {run_label}",
-                line=dict(color=color, width=2),
-            ))
-
-    overlay_fig.update_layout(
-        xaxis_title="Step",
-        yaxis_title="Avg Stress",
-        margin=dict(t=10, b=40, l=56, r=16),
-        height=300,
-        legend=dict(orientation="h", y=1.15),
+def update_comparison_controls(selected, metric_key):
+    """Keep the comparison guidance and action buttons in sync with current selection."""
+    selected = selected or []
+    can_compare = 2 <= len(selected) <= MAX_COMPARISON_RUNS and bool(metric_key)
+    can_clear = len(selected) > 0 or bool(metric_key)
+    return (
+        _selected_run_summary(selected),
+        _comparison_metric_help(metric_key),
+        not can_compare,
+        not can_clear,
     )
 
-    return card(
-        title=f"Comparing {len(selected)} Runs",
-        subtitle="Metric ranges and time series overlay",
-        children=[
-            dbc.Row(metric_cols, className="g-3 mb-3"),
-            html.Div(
-                dcc.Graph(
-                    figure=overlay_fig,
-                    config={"displayModeBar": True, "displaylogo": False,
-                            "responsive": True},
-                    style={"width": "100%", "height": "300px"},
-                ),
-                className="cp-chart-container",
-                style={"height": "300px"},
-            ),
-        ],
-        card_id="comparison-card",
+
+@callback(
+    Output("run-comparison-store", "data", allow_duplicate=True),
+    Input("runs-grid", "selectedRows"),
+    Input("runs-grid", "rowData"),
+    Input("run-compare-metric", "value"),
+    Input("runs-refresh-trigger", "data"),
+    Input("run-search-input", "value"),
+    Input("run-preset-filter", "value"),
+    Input("run-date-range", "start_date"),
+    Input("run-date-range", "end_date"),
+    prevent_initial_call=True,
+)
+def invalidate_run_comparison(
+    selected,
+    row_data,
+    metric_key,
+    refresh_token,
+    search,
+    preset_filter,
+    start_date,
+    end_date,
+):
+    """Discard the last comparison whenever the grid inputs change."""
+    return None
+
+
+@callback(
+    Output("run-comparison-store", "data"),
+    Output("runs-grid", "selectedRows", allow_duplicate=True),
+    Output("run-compare-metric", "value", allow_duplicate=True),
+    Input("btn-run-compare", "n_clicks"),
+    Input("btn-clear-comparison", "n_clicks"),
+    State("runs-grid", "selectedRows"),
+    State("run-compare-metric", "value"),
+    prevent_initial_call=True,
+)
+def manage_run_comparison(compare_clicks, clear_clicks, selected, metric_key):
+    """Only compare after an explicit click, and clear on demand."""
+    triggered = ctx.triggered_id
+    if triggered == "btn-clear-comparison":
+        return None, [], None
+
+    selected = selected or []
+    if len(selected) < 2 or not metric_key:
+        return {
+            "status": "error",
+            "error": "Select at least 2 runs and choose one metric before clicking Compare.",
+        }, no_update, no_update
+    if len(selected) > MAX_COMPARISON_RUNS:
+        return {
+            "status": "error",
+            "error": f"Select no more than {MAX_COMPARISON_RUNS} runs for one comparison to keep the charts readable.",
+        }, no_update, no_update
+
+    metric = _comparison_metric_map().get(metric_key)
+    if metric is None:
+        return {
+            "status": "error",
+            "error": "Choose a valid comparison metric before clicking Compare.",
+        }, no_update, no_update
+
+    run_payloads = []
+    for index, run_row in enumerate(selected):
+        run_detail = db.get_run_detail(int(run_row["id"]))
+        if not run_detail or not run_detail.get("steps"):
+            continue
+
+        series = []
+        for step in run_detail["steps"]:
+            value = step.get(metric_key)
+            if value is None:
+                continue
+            series.append({
+                "step": int(step.get("step", len(series))),
+                "value": float(value),
+            })
+
+        if not series:
+            continue
+
+        max_step = max(point["step"] for point in series) or 1
+        for point in series:
+            point["progress"] = round((point["step"] / max_step) * 100, 2)
+
+        run_payloads.append({
+            "id": int(run_row["id"]),
+            "label": f"#{run_row['id']} {format_run_label(run_row)}",
+            "step_count": len(series),
+            "max_step": max_step,
+            "mean_value": sum(point["value"] for point in series) / len(series),
+            "series": series,
+            "color": CHART_COLORWAY[index % len(CHART_COLORWAY)],
+        })
+
+    if len(run_payloads) < 2:
+        return {
+            "status": "error",
+            "error": "At least 2 selected runs must contain step-level data for the chosen metric.",
+        }, no_update, no_update
+
+    max_steps = {run["max_step"] for run in run_payloads}
+    use_progress_axis = len(max_steps) > 1
+    comparison_note = (
+        "Selected runs have different total step counts, so the trend chart aligns them by normalized progress (%) to keep the trajectories comparable."
+        if use_progress_axis
+        else "Selected runs share the same step span, so the trend chart uses the native simulation step axis."
     )
+
+    return {
+        "status": "success",
+        "metric": metric,
+        "runs": run_payloads,
+        "x_field": "progress" if use_progress_axis else "step",
+        "comparison_note": comparison_note,
+    }, no_update, no_update
+
+
+@callback(
+    Output("run-comparison-results", "children"),
+    Input("run-comparison-store", "data"),
+)
+def render_comparison_results(compare_state):
+    """Render the comparison result card from the last explicit compare request."""
+    return _build_comparison_results(compare_state)

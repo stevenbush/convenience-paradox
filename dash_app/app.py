@@ -87,6 +87,21 @@ def _build_layout() -> html.Div:
             # before the LLM returns chart-by-chart annotations.
             dcc.Store(id="annotation-annotate-request-store", data=None),
 
+            # Agent Forums UI state — survives in-app navigation only.
+            dcc.Store(id="forum-history-store", data={}, storage_type="memory"),
+
+            # Agent Forums request queue — drives the incremental, one-step-at-a-time
+            # forum execution so the UI can stay responsive while turns stream in.
+            dcc.Store(id="forum-run-request-store", data=None),
+
+            # Agent Forums dispatch store — mirrors the next unit of forum work so
+            # one LLM step is processed at a time without a polling interval.
+            dcc.Store(id="forum-run-dispatch-store", data=None),
+
+            # Agent Forums control store — keeps stop requests separate from the
+            # forum transcript state so in-flight turns can finish gracefully.
+            dcc.Store(id="forum-control-store", data={}, storage_type="memory"),
+
             # LLM audit table snapshot — keeps the detail panel aligned with the
             # rows currently rendered in the Audit Log table.
             dcc.Store(id="audit-trigger-store", data=[]),

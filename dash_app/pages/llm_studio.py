@@ -191,6 +191,21 @@ ANNOTATION_WORKFLOW_NOTE = (
     "and the generated interpretation once the role finishes."
 )
 
+FORUM_GUIDANCE = (
+    "Invite part of the current simulation population into a bounded set of discussion groups. "
+    "Each group runs a short 1 to 3 turn dialogue about delegation norms, then the forum "
+    "extracts one bounded norm signal that nudges delegation preference without replacing "
+    "the rule-based adaptation logic or hiding the transcript."
+)
+
+FORUM_WORKFLOW_NOTE = (
+    "Choose the invited fraction, optionally override it with an exact agent count, then set "
+    "the number of groups and dialogue turns before clicking Run Forum. The scale preview below "
+    "shows how many residents and LLM calls the current configuration implies. Forum groups are "
+    "processed one step at a time so dialogue stays visible and the interface remains responsive. "
+    "Use Stop Forum to halt after the current in-flight turn finishes."
+)
+
 ANNOTATION_CHART_SPECS = [
     {
         "chart_key": "total_labor_hours",
@@ -1519,6 +1534,123 @@ def _normalize_annotation_state(data: dict[str, Any] | None) -> dict[str, Any]:
     return state
 
 
+import threading
+
+# --- Server-Side Forum State ---
+# The forum processing callback fires on an interval. In a threaded Dash server,
+# multiple interval ticks can fire concurrently, each carrying stale client-side
+# State values. To prevent duplicate processing, the authoritative forum state
+# lives here on the server. The callback reads/writes this variable under a lock,
+# then returns the state to forum-history-store for UI rendering only.
+_forum_server_state: dict[str, Any] | None = None
+_forum_stop_requested: bool = False
+_forum_lock = threading.Lock()
+
+
+def _default_forum_state() -> dict[str, Any]:
+    """Return the initial Agent Forums state."""
+    return {
+        "status": "idle",
+        "error": None,
+        "note": FORUM_WORKFLOW_NOTE,
+        "model": None,
+        "model_instance_id": None,
+        "request_id": None,
+        "current_step": 0,
+        "forum_fraction": 0.20,
+        "requested_agent_count": 0,
+        "requested_group_count": 2,
+        "participant_source": "fraction",
+        "num_turns": 2,
+        "agent_count": 0,
+        "group_count": 0,
+        "group_sizes": [],
+        "estimated_turns": 0,
+        "estimated_llm_calls": 0,
+        "stop_requested": False,
+        "elapsed": None,
+        "generated_at": None,
+        "started_at": None,
+        "groups": [],
+        "last_run_clicks": 0,
+        "last_clear_clicks": 0,
+    }
+
+
+def _normalize_forum_state(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Merge arbitrary store payloads with the expected forum schema."""
+    state = _default_forum_state()
+    if not isinstance(data, dict):
+        return state
+
+    state["status"] = str(data.get("status") or "idle")
+    state["error"] = data.get("error")
+    state["note"] = str(data.get("note") or FORUM_WORKFLOW_NOTE)
+    state["model"] = data.get("model")
+    state["model_instance_id"] = data.get("model_instance_id")
+    state["request_id"] = data.get("request_id")
+    state["current_step"] = int(data.get("current_step") or 0)
+    state["forum_fraction"] = float(data.get("forum_fraction") or 0.20)
+    state["requested_agent_count"] = int(data.get("requested_agent_count") or 0)
+    state["requested_group_count"] = int(
+        data.get("requested_group_count")
+        or data.get("group_count")
+        or data.get("group_size")
+        or 2
+    )
+    state["participant_source"] = str(data.get("participant_source") or "fraction")
+    state["num_turns"] = int(data.get("num_turns") or 2)
+    state["agent_count"] = int(data.get("agent_count") or 0)
+    state["group_count"] = int(data.get("group_count") or 0)
+    group_sizes = data.get("group_sizes")
+    if isinstance(group_sizes, list):
+        state["group_sizes"] = [int(size) for size in group_sizes if isinstance(size, (int, float))]
+    state["estimated_turns"] = int(data.get("estimated_turns") or 0)
+    state["estimated_llm_calls"] = int(data.get("estimated_llm_calls") or 0)
+    state["stop_requested"] = bool(data.get("stop_requested"))
+    state["elapsed"] = data.get("elapsed")
+    state["generated_at"] = data.get("generated_at")
+    state["started_at"] = data.get("started_at")
+    state["last_run_clicks"] = int(data.get("last_run_clicks") or 0)
+    state["last_clear_clicks"] = int(data.get("last_clear_clicks") or 0)
+    groups = data.get("groups")
+    if isinstance(groups, list):
+        state["groups"] = [item for item in groups if isinstance(item, dict)]
+
+    return state
+
+
+def _default_forum_control_state() -> dict[str, Any]:
+    """Keep transient forum execution controls separate from transcript state."""
+    return {
+        "request_id": None,
+        "stop_requested": False,
+        "last_stop_clicks": 0,
+    }
+
+
+def _normalize_forum_control_state(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize the forum control store payload."""
+    state = _default_forum_control_state()
+    if not isinstance(data, dict):
+        return state
+
+    state["request_id"] = data.get("request_id")
+    state["stop_requested"] = bool(data.get("stop_requested"))
+    state["last_stop_clicks"] = int(data.get("last_stop_clicks") or 0)
+    return state
+
+
+def _copy_forum_state(data: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Clone the authoritative forum state so concurrent responses can replay it safely."""
+    if not isinstance(data, dict):
+        return None
+
+    state = dict(data)
+    state["groups"] = [dict(group) for group in (state.get("groups") or []) if isinstance(group, dict)]
+    return state
+
+
 def _build_annotations_intro():
     """Render a compact guide for the Visualization Annotator tab."""
     return html.Div(
@@ -1531,6 +1663,533 @@ def _build_annotations_intro():
         ],
         className="cp-scenario-guide",
     )
+
+
+def _build_forum_intro():
+    """Render a compact guide for the Agent Forums tab."""
+    return html.Div(
+        [
+            html.Div("How To Use Agent Forums", className="cp-scenario-guide__label"),
+            html.Div(
+                FORUM_GUIDANCE,
+                className="cp-scenario-guide__text",
+            ),
+            html.Div(
+                [
+                    status_badge("Experimental Mode", "warning"),
+                    status_badge("Role 5", "primary"),
+                    html.Span(
+                        "Short 1–3 turn exchanges keep the experimental layer bounded and readable.",
+                        className="cp-scenario-guide__text",
+                    ),
+                ],
+                className="cp-forum__guide-meta",
+            ),
+        ],
+        className="cp-scenario-guide",
+    )
+
+
+def _build_forum_scale_summary(
+    forum_fraction: float,
+    requested_agent_count: int,
+    requested_group_count: int,
+    num_turns: int,
+) -> Any:
+    """Render a compact scale preview so users can judge forum load before running."""
+    from model.forums import plan_forum_groups
+
+    sim_model = app_state.get_model()
+    if sim_model is None:
+        return html.Div(
+            "Initialize a simulation first to preview how many residents can join the forum.",
+            className="cp-scenario__composer-note",
+        )
+
+    total_agents = len(list(sim_model.agents))
+    plan = plan_forum_groups(
+        total_agents,
+        forum_fraction=float(forum_fraction or 0.0),
+        group_count=int(requested_group_count or 1),
+        participant_count=int(requested_agent_count or 0) or None,
+    )
+    participant_count = int(plan.get("participant_count") or 0)
+    actual_group_count = int(plan.get("actual_group_count") or 0)
+    group_sizes = list(plan.get("group_sizes") or [])
+    estimated_turns = participant_count * int(num_turns or 0)
+    estimated_llm_calls = estimated_turns + actual_group_count if actual_group_count else 0
+    size_distribution = " / ".join(str(size) for size in group_sizes) if group_sizes else "—"
+
+    badges = []
+    if plan.get("participant_source") == "count" and int(requested_agent_count or 0) > 0:
+        badges.append(status_badge("Exact participant count", "primary"))
+    else:
+        badges.append(status_badge("Fraction-derived participant count", "info"))
+    if plan.get("group_count_adjusted"):
+        badges.append(status_badge("Groups adjusted to fit available participants", "warning"))
+    if plan.get("participant_count_adjusted"):
+        badges.append(status_badge("Participants capped to keep groups readable", "warning"))
+    if estimated_llm_calls > 36:
+        badges.append(status_badge("High LLM load", "warning"))
+    elif estimated_llm_calls > 0:
+        badges.append(status_badge("Bounded workload", "info"))
+
+    note = (
+        "You can invite residents by fraction or override with an exact count. Group membership is "
+        "distributed automatically from the requested group count, and each group is capped to a small, "
+        "readable discussion size so the transcript stays responsive. Each participant speaks once per turn "
+        "round, and each group needs one extra extraction call."
+    )
+
+    return html.Div(
+        [
+            html.Div(badges, className="d-flex gap-2 flex-wrap mb-3"),
+            _build_chat_context_grid(
+                {
+                    "total_population": total_agents,
+                    "requested_agent_count": int(requested_agent_count or 0) or "—",
+                    "participant_count": participant_count,
+                    "requested_group_count": requested_group_count,
+                    "actual_group_count": actual_group_count,
+                    "group_sizes": size_distribution,
+                    "num_turns": int(num_turns or 0),
+                    "estimated_turns": estimated_turns,
+                    "estimated_llm_calls": estimated_llm_calls,
+                },
+                [
+                    ("total_population", "Population"),
+                    ("requested_agent_count", "Requested Agents"),
+                    ("participant_count", "Invited Agents"),
+                    ("requested_group_count", "Requested Groups"),
+                    ("actual_group_count", "Actual Groups"),
+                    ("group_sizes", "Agents Per Group"),
+                    ("num_turns", "Turn Rounds"),
+                    ("estimated_turns", "Dialogue Turns"),
+                    ("estimated_llm_calls", "Estimated LLM Calls"),
+                ],
+                accent_first=True,
+            ),
+            html.Div(note, className="cp-scenario__composer-note"),
+        ],
+        className="cp-forum__plan-summary",
+    )
+
+
+def _forum_resident_short_label(agent_id: Any) -> str:
+    """Return a compact resident label for group chips and pending states."""
+    try:
+        return f"Resident #{int(agent_id) % 100}"
+    except (TypeError, ValueError):
+        return "Resident"
+
+
+def _forum_group_status_badge(status: str):
+    """Map one forum-group status to a compact badge."""
+    badge_map = {
+        "queued": ("Queued", "neutral"),
+        "active": ("Dialogue live", "info"),
+        "waiting_outcome": ("Extracting norm signal", "warning"),
+        "success": ("Forum complete", "success"),
+        "stopped": ("Stopped gracefully", "warning"),
+        "error": ("Forum failed", "danger"),
+    }
+    label, variant = badge_map.get(status, ("Idle", "neutral"))
+    return status_badge(label, variant)
+
+
+def _build_forum_group_participants(group: dict[str, Any] | None):
+    """Render compact participant chips for one forum group."""
+    group = group or {}
+    chips = [
+        html.Div(
+            [
+                html.Div("Participant", className="cp-chat-context__label"),
+                html.Div(_forum_resident_short_label(agent_id), className="cp-chat-context__value"),
+            ],
+            className="cp-chat-context__chip",
+        )
+        for agent_id in group.get("agent_ids", [])
+    ]
+    return html.Div(chips, className="cp-chat-context__grid")
+
+
+def _build_forum_thread(group: dict[str, Any] | None):
+    """Render one group transcript with a pending speaker bubble when active."""
+    group = group or {}
+    turns = group.get("turns") or []
+    status = str(group.get("status") or "queued")
+    bubbles = []
+
+    if not turns and status == "queued":
+        return _scenario_placeholder(
+            "This group is queued. Its discussion will begin automatically when earlier groups finish."
+        )
+
+    for turn in turns:
+        bubbles.append(
+            html.Div(
+                [
+                    html.Div(str(turn.get("speaker_label") or "Resident"), className="cp-chat__sender"),
+                    html.Div(str(turn.get("content") or "")),
+                ],
+                className="cp-chat__message cp-chat__message--ai cp-forum__message",
+            )
+        )
+
+    current_agent_ids = group.get("agent_ids") or []
+    turn_cursor = int(group.get("turn_cursor") or 0)
+    if status == "active" and current_agent_ids:
+        current_speaker_id = current_agent_ids[turn_cursor % len(current_agent_ids)]
+        bubbles.append(
+            html.Div(
+                [
+                    html.Div(_forum_resident_short_label(current_speaker_id), className="cp-chat__sender"),
+                    html.Div(
+                        "Thinking about the group's delegation norms before replying.",
+                        className="cp-scenario__reply-reasoning",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(className="cp-scenario__thinking-dot"),
+                            html.Span(className="cp-scenario__thinking-dot"),
+                            html.Span(className="cp-scenario__thinking-dot"),
+                        ],
+                        className="cp-scenario__thinking",
+                    ),
+                ],
+                className="cp-chat__message cp-chat__message--ai cp-forum__message cp-forum__message--pending",
+            )
+        )
+    elif status == "waiting_outcome":
+        bubbles.append(
+            html.Div(
+                [
+                    html.Div("Forum Summary", className="cp-chat__sender"),
+                    html.Div(
+                        "Dialogue complete. Extracting the group's norm signal and bounded preference update.",
+                        className="cp-scenario__reply-reasoning",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(className="cp-scenario__thinking-dot"),
+                            html.Span(className="cp-scenario__thinking-dot"),
+                            html.Span(className="cp-scenario__thinking-dot"),
+                        ],
+                        className="cp-scenario__thinking",
+                    ),
+                ],
+                className="cp-chat__message cp-chat__message--ai cp-forum__message cp-forum__message--pending",
+            )
+        )
+    elif status in {"success", "stopped"} and isinstance(group.get("outcome"), dict):
+        outcome = group.get("outcome") or {}
+        bubbles.append(
+            html.Div(
+                [
+                    html.Div("Forum Summary", className="cp-chat__sender"),
+                    html.Div(
+                        str(outcome.get("summary") or "The group finished its discussion."),
+                        className="cp-scenario__reply-summary",
+                    ),
+                    html.Div(
+                        (
+                            f"Norm signal {_format_scenario_value(outcome.get('norm_signal'))} · confidence "
+                            f"{_format_scenario_value(outcome.get('confidence'))}"
+                            if status == "success"
+                            else
+                            f"Partial stop summary · norm signal {_format_scenario_value(outcome.get('norm_signal'))} · confidence "
+                            f"{_format_scenario_value(outcome.get('confidence'))}"
+                        ),
+                        className="cp-scenario__message-meta",
+                    ),
+                ],
+                className="cp-chat__message cp-chat__message--ai cp-forum__message cp-scenario__assistant-message",
+            )
+        )
+    elif status == "stopped":
+        bubbles.append(
+            html.Div(
+                [
+                    html.Div("Forum Summary", className="cp-chat__sender"),
+                    html.Div(
+                        str(group.get("stop_note") or "This group was stopped before a summary could be produced."),
+                        className="cp-scenario__reply-reasoning",
+                    ),
+                ],
+                className="cp-chat__message cp-chat__message--ai cp-forum__message cp-scenario__assistant-message",
+            )
+        )
+    elif status == "error":
+        bubbles.append(
+            html.Div(
+                [
+                    html.Div("Forum Summary", className="cp-chat__sender"),
+                    html.Div(
+                        str(group.get("error") or "This group could not be completed."),
+                        className="cp-scenario__reply-error",
+                    ),
+                ],
+                className="cp-chat__message cp-chat__message--ai cp-forum__message cp-scenario__assistant-message",
+            )
+        )
+
+    return html.Div(bubbles, className="cp-chat")
+
+
+def _build_forum_group_detail(group: dict[str, Any] | None, *, forums_pending: bool = False):
+    """Render the right-side status and outcome panel for one forum group."""
+    group = group or {}
+    status = str(group.get("status") or "queued")
+    turn_cursor = int(group.get("turn_cursor") or 0)
+    total_turns = int(group.get("total_turns") or 0)
+
+    summary_values = {
+        "turn_progress": f"{turn_cursor}/{total_turns}" if total_turns else "0/0",
+        "status": status.replace("_", " ").title(),
+        "delta_applied": group.get("delta_applied") if group.get("delta_applied") is not None else 0.0,
+        "elapsed": group.get("elapsed") or 0.0,
+    }
+
+    children = [
+        _build_forum_group_participants(group),
+        html.Div("Group Status", className="cp-scenario__section-label"),
+        _build_chat_context_grid(
+            summary_values,
+            [
+                ("turn_progress", "Turn Progress"),
+                ("status", "Status"),
+                ("delta_applied", "Delta Applied"),
+                ("elapsed", "Elapsed (s)"),
+            ],
+            accent_first=True,
+        ),
+    ]
+
+    if status == "queued":
+        children.append(
+            html.Div(
+                "Queued behind earlier groups. The transcript will begin filling automatically.",
+                className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
+            )
+        )
+    elif status in {"active", "waiting_outcome"}:
+        children.append(
+            html.Div(
+                "This group is currently live. New turns and the final norm signal will appear here as soon as each step finishes.",
+                className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
+            )
+        )
+    elif status in {"success", "stopped"}:
+        outcome = group.get("outcome") or {}
+        preference_updates = group.get("preference_updates") or []
+        children.extend([
+            html.Div("Forum Outcome", className="cp-scenario__section-label"),
+            html.Div(
+                str(
+                    outcome.get("summary")
+                    or group.get("stop_note")
+                    or "The group completed without a readable summary."
+                ),
+                className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
+            ),
+            _build_chat_context_grid(
+                {
+                    "norm_signal": outcome.get("norm_signal"),
+                    "confidence": outcome.get("confidence"),
+                    "agents_updated": len(preference_updates),
+                    "delta_applied": group.get("delta_applied"),
+                },
+                [
+                    ("norm_signal", "Norm Signal"),
+                    ("confidence", "Confidence"),
+                    ("agents_updated", "Agents Updated"),
+                    ("delta_applied", "Delta Applied"),
+                ],
+            ),
+        ])
+        if status == "stopped" and group.get("stop_note"):
+            children.append(
+                html.Div(
+                    str(group.get("stop_note")),
+                    className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
+                )
+            )
+        if preference_updates:
+            children.extend([
+                html.Div("Preference Updates", className="cp-scenario__section-label"),
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.Div(_forum_resident_short_label(update.get("agent_id")), className="cp-chat-context__label"),
+                                html.Div(
+                                    f"{_format_scenario_value(update.get('before_preference'))} → {_format_scenario_value(update.get('after_preference'))}",
+                                    className="cp-chat-context__value",
+                                ),
+                            ],
+                            className="cp-chat-context__chip",
+                        )
+                        for update in preference_updates
+                    ],
+                    className="cp-chat-context__grid",
+                ),
+            ])
+    elif status == "error":
+        children.append(
+            html.Div(
+                str(group.get("error") or "The forum group could not be completed."),
+                className="cp-scenario__reply-error",
+            )
+        )
+
+    if status in {"success", "stopped", "error"}:
+        children.append(
+            dbc.Button(
+                [html.I(className="fas fa-rotate-right me-1"), "Rerun This Group"],
+                id={"type": "forum-rerun-btn", "index": int(group.get("index") or 0)},
+                className="cp-btn-outline cp-forum__rerun-btn",
+                size="sm",
+                disabled=forums_pending,
+            )
+        )
+
+    return html.Div(children, className="cp-forum__detail")
+
+
+def _build_forum_group_card(group: dict[str, Any] | None, *, forums_pending: bool = False):
+    """Render one forum group as a transcript card plus compact outcome panel."""
+    group = group or {}
+    group_index = int(group.get("index") or 0) + 1
+    agent_ids = group.get("agent_ids") or []
+    subtitle = f"{len(agent_ids)} agents · {' / '.join(_forum_resident_short_label(agent_id) for agent_id in agent_ids)}"
+    return card(
+        title=f"Group {group_index}",
+        subtitle=subtitle,
+        header_right=_forum_group_status_badge(str(group.get("status") or "queued")),
+        children=html.Div(
+            [
+                html.Div(
+                    _build_forum_thread(group),
+                    className="cp-forum__thread-shell",
+                ),
+                _build_forum_group_detail(group, forums_pending=forums_pending),
+            ],
+            className="cp-forum__body",
+        ),
+        class_name="cp-forum__card",
+    )
+
+
+def _build_forum_output(forum_data: dict[str, Any] | None):
+    """Render the Agent Forums workspace from the in-memory forum state."""
+    state = _normalize_forum_state(forum_data)
+    status = state.get("status", "idle")
+    groups = state.get("groups") or []
+
+    if status == "idle":
+        return card(
+            title="Forum Workspace",
+            subtitle="Experimental small-group dialogue and bounded norm influence",
+            children=[
+                html.Div(
+                    FORUM_WORKFLOW_NOTE,
+                    className="cp-scenario__reply-reasoning cp-llm-inspector__prose",
+                ),
+                _scenario_placeholder(
+                    "Click Run Forum to stage the discussion groups and watch each conversation appear as the forum progresses."
+                ),
+            ],
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+        )
+
+    if status == "error" and not groups:
+        return card(
+            title="Forum Workspace",
+            subtitle="Agent Forums",
+            children=html.Div(
+                str(state.get("error") or "Unable to stage the forum discussion."),
+                className="cp-scenario__reply-error",
+            ),
+            class_name="cp-llm-workspace__card cp-llm-workspace__card--inspector",
+        )
+
+    completed_groups = len([group for group in groups if group.get("status") == "success"])
+    error_groups = len([group for group in groups if group.get("status") == "error"])
+    stopped_groups = len([group for group in groups if group.get("status") == "stopped"])
+    summary_values = {
+        "current_step": state.get("current_step"),
+        "forum_fraction": state.get("forum_fraction"),
+        "requested_agent_count": state.get("requested_agent_count") or "—",
+        "requested_group_count": state.get("requested_group_count"),
+        "num_turns": state.get("num_turns"),
+        "agent_count": state.get("agent_count"),
+        "group_count": state.get("group_count"),
+        "group_sizes": " / ".join(str(size) for size in state.get("group_sizes") or []) or "—",
+        "estimated_llm_calls": state.get("estimated_llm_calls"),
+        "participant_source": "Exact count" if state.get("participant_source") == "count" else "Forum Fraction",
+        "model": state.get("model") or "—",
+    }
+
+    badges = [status_badge("Experimental Mode", "warning")]
+    if status == "pending":
+        badges.extend([
+            status_badge(f"{completed_groups}/{len(groups)} groups complete", "info"),
+            status_badge("LLM thinking", "warning"),
+        ])
+    elif error_groups:
+        badges.extend([
+            status_badge(f"{completed_groups}/{len(groups)} groups complete", "warning"),
+            status_badge(f"{error_groups} group errors", "danger"),
+        ])
+    elif status == "stopped":
+        badges.extend([
+            status_badge(f"{completed_groups + stopped_groups}/{len(groups)} groups processed", "warning"),
+            status_badge("Stopped gracefully", "warning"),
+        ])
+    else:
+        badges.extend([
+            status_badge(f"{len(groups)} groups complete", "success"),
+            status_badge("Bounded norm updates applied", "info"),
+        ])
+
+    children = [
+        html.Div(badges, className="d-flex gap-2 flex-wrap mb-3"),
+        _build_chat_context_grid(
+            summary_values,
+            [
+                ("current_step", "Current Step"),
+                ("forum_fraction", "Forum Fraction"),
+                ("requested_agent_count", "Requested Agents"),
+                ("requested_group_count", "Requested Groups"),
+                ("num_turns", "Dialogue Turns"),
+                ("agent_count", "Participating Agents"),
+                ("group_count", "Actual Groups"),
+                ("group_sizes", "Agents Per Group"),
+                ("estimated_llm_calls", "Estimated LLM Calls"),
+                ("participant_source", "Invitation Mode"),
+                ("model", "Model"),
+            ],
+            accent_first=True,
+        ),
+        html.Div(
+            str(state.get("note") or FORUM_WORKFLOW_NOTE),
+            className="cp-scenario__reply-reasoning cp-annotation__summary-note cp-llm-inspector__prose",
+        ),
+    ]
+
+    if status == "error" and state.get("error"):
+        children.append(
+            html.Div(str(state.get("error")), className="cp-scenario__reply-error")
+        )
+
+    children.append(
+        html.Div(
+            [_build_forum_group_card(group, forums_pending=status == "pending") for group in groups],
+            className="cp-forum__list",
+        )
+    )
+
+    return html.Div(children)
 
 
 def _build_audit_intro():
@@ -2256,6 +2915,239 @@ def _build_audit_detail(entry: dict[str, Any] | None):
     )
 
 
+def _build_forum_groups_snapshot(
+    sim_model: Any,
+    forum_fraction: float,
+    requested_agent_count: int,
+    requested_group_count: int,
+    num_turns: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Stage the forum groups up front so the UI can render them immediately."""
+    from model.forums import plan_forum_groups, select_forum_groups_by_count
+
+    plan = plan_forum_groups(
+        len(list(sim_model.agents)),
+        forum_fraction=forum_fraction,
+        group_count=requested_group_count,
+        participant_count=int(requested_agent_count or 0) or None,
+    )
+    selected_groups = select_forum_groups_by_count(
+        sim_model,
+        forum_fraction=forum_fraction,
+        group_count=requested_group_count,
+        participant_count=int(requested_agent_count or 0) or None,
+    )
+    groups = []
+    agent_count = 0
+    for index, group in enumerate(selected_groups):
+        agent_ids = [agent.unique_id for agent in group]
+        agent_count += len(agent_ids)
+        groups.append({
+            "id": f"group-{index + 1}",
+            "index": index,
+            "agent_ids": agent_ids,
+            "status": "active" if index == 0 else "queued",
+            "turns": [],
+            "turn_cursor": 0,
+            "total_turns": len(agent_ids) * int(num_turns or 0),
+            "outcome": None,
+            "delta_applied": 0.0,
+            "preference_updates": [],
+            "elapsed": 0.0,
+            "error": None,
+            "last_rerun_clicks": 0,
+            "stop_note": None,
+        })
+    return groups, {
+        "participant_count": agent_count,
+        "requested_participant_count": int(plan.get("requested_participant_count") or requested_agent_count or 0),
+        "actual_group_count": len(groups),
+        "requested_group_count": int(plan.get("requested_group_count") or requested_group_count),
+        "participant_source": str(plan.get("participant_source") or "fraction"),
+        "group_sizes": list(plan.get("group_sizes") or []),
+        "estimated_turns": agent_count * int(num_turns or 0),
+        "estimated_llm_calls": (agent_count * int(num_turns or 0)) + len(groups) if groups else 0,
+    }
+
+
+def _forum_group_turns(turns: list[dict[str, Any]] | None):
+    """Convert stored turn dicts back into DialogueTurn objects for role-5 helpers."""
+    from model.forums import DialogueTurn
+
+    output = []
+    for turn in turns or []:
+        if not isinstance(turn, dict):
+            continue
+        output.append(
+            DialogueTurn(
+                speaker_id=int(turn.get("speaker_id") or 0),
+                speaker_label=str(turn.get("speaker_label") or "Resident"),
+                content=str(turn.get("content") or ""),
+            )
+        )
+    return output
+
+
+def _finalize_forum_state(
+    forum_data: dict[str, Any] | None,
+    *,
+    stopped: bool = False,
+) -> dict[str, Any]:
+    """Close a forum run after all groups have been processed."""
+    import time
+
+    state = _normalize_forum_state(forum_data)
+    had_error = any(group.get("status") == "error" for group in state.get("groups", []))
+    had_stopped = any(group.get("status") == "stopped" for group in state.get("groups", []))
+    started_at = state.get("started_at")
+    elapsed = None
+    if isinstance(started_at, (int, float)):
+        elapsed = round(max(0.0, time.perf_counter() - started_at), 2)
+
+    final_status = "error" if had_error else "stopped" if stopped or had_stopped else "success"
+    state.update({
+        "status": final_status,
+        "error": "One or more forum groups could not be completed." if had_error else None,
+        "stop_requested": bool(stopped or had_stopped),
+        "elapsed": elapsed,
+        "generated_at": datetime.now().isoformat(),
+    })
+    return state
+
+
+def _finalize_forum_error_state(
+    forum_data: dict[str, Any] | None,
+    error_message: str,
+) -> dict[str, Any]:
+    """Close a forum run with a specific terminal error message."""
+    import time
+
+    state = _normalize_forum_state(forum_data)
+    started_at = state.get("started_at")
+    elapsed = None
+    if isinstance(started_at, (int, float)):
+        elapsed = round(max(0.0, time.perf_counter() - started_at), 2)
+
+    state.update({
+        "status": "error",
+        "error": error_message,
+        "elapsed": elapsed,
+        "generated_at": datetime.now().isoformat(),
+    })
+    return state
+
+
+def _advance_to_next_queued_forum_group(
+    groups: list[dict[str, Any]],
+    *,
+    after_index: int,
+) -> int | None:
+    """Activate the next queued group, if any, and return its index."""
+    for next_index in range(after_index + 1, len(groups)):
+        next_group = dict(groups[next_index])
+        if next_group.get("status") != "queued":
+            continue
+        next_group["status"] = "active"
+        groups[next_index] = next_group
+        return next_index
+    return None
+
+
+def _record_forum_audit(state: dict[str, Any], model_name: str) -> None:
+    """Capture one compact audit entry for a completed forum run."""
+    _record_audit(
+        "Role 5",
+        "agent_forums",
+        model_name,
+        f"step={state.get('current_step')} · groups={len(state.get('groups', []))}",
+        f"{len(state.get('groups', []))} groups",
+        float(state.get("elapsed") or 0.0),
+        state.get("error"),
+        input_payload={
+            "forum_fraction": state.get("forum_fraction"),
+            "requested_agent_count": state.get("requested_agent_count"),
+            "requested_group_count": state.get("requested_group_count"),
+            "actual_group_count": state.get("group_count"),
+            "participant_source": state.get("participant_source"),
+            "group_sizes": state.get("group_sizes"),
+            "num_turns": state.get("num_turns"),
+            "estimated_llm_calls": state.get("estimated_llm_calls"),
+            "current_step": state.get("current_step"),
+            "model": model_name,
+        },
+        output_payload={
+            "status": state.get("status"),
+            "groups": state.get("groups"),
+        },
+    )
+
+
+def _stop_forum_groups_gracefully(
+    state: dict[str, Any],
+    *,
+    group_index: int,
+    group_agents: list[Any],
+    model_name: str,
+) -> dict[str, Any]:
+    """Stop the forum after the current in-flight step and preserve partial results."""
+    from model.forums import apply_forum_outcome, extract_forum_outcome_from_turns
+
+    groups = list(state.get("groups") or [])
+    if group_index < len(groups):
+        current_group = dict(groups[group_index])
+        turns = _forum_group_turns(current_group.get("turns"))
+        if turns:
+            outcome = extract_forum_outcome_from_turns(
+                turns,
+                step=int(state.get("current_step") or 0),
+                agent_ids=[int(agent.unique_id) for agent in group_agents],
+                llm_model=model_name,
+            )
+            if outcome is not None:
+                delta, preference_updates = apply_forum_outcome(group_agents, outcome)
+                current_group.update({
+                    "status": "stopped",
+                    "outcome": outcome.model_dump(),
+                    "delta_applied": round(delta, 4),
+                    "preference_updates": preference_updates,
+                    "error": None,
+                    "stop_note": "Stopped after completing the current in-flight turn. Partial dialogue was summarized.",
+                })
+            else:
+                current_group.update({
+                    "status": "stopped",
+                    "error": None,
+                    "stop_note": "Stopped after the current in-flight turn. No reliable norm signal could be extracted from the partial dialogue.",
+                })
+        else:
+            current_group.update({
+                "status": "stopped",
+                "error": None,
+                "stop_note": "Stopped before this group produced any dialogue.",
+            })
+        groups[group_index] = current_group
+
+    for queued_index, queued_group in enumerate(groups):
+        if queued_index <= group_index:
+            continue
+        if queued_group.get("status") != "queued":
+            continue
+        next_group = dict(queued_group)
+        next_group.update({
+            "status": "stopped",
+            "error": None,
+            "stop_note": "Skipped because the forum was stopped before this group began.",
+        })
+        groups[queued_index] = next_group
+
+    state["groups"] = groups
+    state["note"] = (
+        "Forum stop requested. The current in-flight turn was allowed to finish, then the workspace "
+        "was finalized with the dialogue accumulated so far."
+    )
+    return _finalize_forum_state(state, stopped=True)
+
+
 def _build_chat_thread(chat_state: dict[str, Any] | None):
     """Render the chat-style Result Interpreter transcript."""
     chat_state = chat_state or {}
@@ -2563,6 +3455,11 @@ def _build_model_config_summary(
     return html.Div(chips, className="cp-model-summary__list")
 
 
+def _llm_tab_label(role_marker: str, label: str) -> str:
+    """Return a compact tab label that keeps role-to-tab mapping visible."""
+    return f"{role_marker} · {label}"
+
+
 def _tab_scenario() -> html.Div:
     """Role 1: Scenario Parser — NL description to model parameters."""
     return html.Div([
@@ -2778,48 +3675,88 @@ def _tab_annotations() -> html.Div:
 def _tab_forums() -> html.Div:
     """Role 5: Agent Forums — experimental LLM-powered group discussions."""
     return html.Div([
-        html.Div([
-            status_badge("Experimental Mode", "warning"),
-        ], className="mb-3"),
-        dbc.Row([
-            dbc.Col([
-                html.Label("Forum Fraction", className="cp-controls__slider-label"),
-                dcc.Slider(
-                    id="forum-fraction-slider",
-                    min=0.05, max=0.5, step=0.05, value=0.20,
-                    marks=None,
-                    tooltip={"placement": "bottom"},
+        _build_forum_intro(),
+        card(
+            title="Forum Setup",
+            subtitle="Configure the experimental group discussion before running Role 5",
+            header_right=status_badge("Experimental Mode", "warning"),
+            children=[
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Forum Fraction", className="cp-controls__slider-label"),
+                        dcc.Slider(
+                            id="forum-fraction-slider",
+                            min=0.05, max=0.5, step=0.05, value=0.20,
+                            marks=None,
+                            tooltip={"placement": "bottom"},
+                        ),
+                    ], xl=4, md=12),
+                    dbc.Col([
+                        html.Label("Exact Agent Count", className="cp-controls__slider-label"),
+                        dbc.Input(
+                            id="forum-agent-count-input",
+                            type="number",
+                            min=0,
+                            step=1,
+                            value=None,
+                            placeholder="Optional override",
+                            className="cp-forum__count-input",
+                        ),
+                        html.Div(
+                            "Leave blank to derive participation from Forum Fraction.",
+                            className="cp-scenario__composer-note",
+                        ),
+                    ], xl=2, md=6),
+                    dbc.Col([
+                        html.Label("Group Count", className="cp-controls__slider-label"),
+                        dbc.RadioItems(
+                            id="forum-group-count",
+                            options=[{"label": str(i), "value": i} for i in [1, 2, 3, 4]],
+                            value=2, inline=True,
+                        ),
+                    ], xl=3, md=6),
+                    dbc.Col([
+                        html.Label("Dialogue Turns", className="cp-controls__slider-label"),
+                        dbc.RadioItems(
+                            id="forum-num-turns",
+                            options=[{"label": str(i), "value": i} for i in [1, 2, 3]],
+                            value=2, inline=True,
+                        ),
+                    ], xl=3, md=6),
+                ], className="g-3"),
+                html.Div(id="forum-plan-summary", className="mt-3"),
+                html.Div(
+                    [
+                        dbc.Button(
+                            [html.I(className="fas fa-people-group me-1"), "Run Forum"],
+                            id="btn-run-forum",
+                            className="cp-btn-primary",
+                            size="sm",
+                        ),
+                        dbc.Button(
+                            [html.I(className="fas fa-stop-circle me-1"), "Stop Forum"],
+                            id="btn-stop-forum",
+                            className="cp-btn-outline",
+                            size="sm",
+                            disabled=True,
+                        ),
+                        dbc.Button(
+                            [html.I(className="fas fa-trash-alt me-1"), "Clear Forums"],
+                            id="btn-clear-forum",
+                            className="cp-btn-outline",
+                            size="sm",
+                        ),
+                    ],
+                    className="cp-scenario__composer-actions mt-3",
                 ),
-            ], md=4),
-            dbc.Col([
-                html.Label("Group Size", className="cp-controls__slider-label"),
-                dbc.RadioItems(
-                    id="forum-group-size",
-                    options=[{"label": str(i), "value": i} for i in [2, 3, 4]],
-                    value=2, inline=True,
+                html.Div(
+                    FORUM_WORKFLOW_NOTE,
+                    className="cp-scenario__composer-note",
                 ),
-            ], md=3),
-            dbc.Col([
-                html.Label("Dialogue Turns", className="cp-controls__slider-label"),
-                dbc.RadioItems(
-                    id="forum-num-turns",
-                    options=[{"label": str(i), "value": i} for i in [1, 2, 3]],
-                    value=2, inline=True,
-                ),
-            ], md=3),
-            dbc.Col([
-                dbc.Button(
-                    [html.I(className="fas fa-people-group me-1"), "Run Forum"],
-                    id="btn-run-forum",
-                    className="cp-btn-primary mt-3",
-                    size="sm",
-                ),
-            ], md=2),
-        ], className="mb-3"),
-        dbc.Spinner(
-            html.Div(id="forum-output"),
-            color="primary",
+            ],
+            class_name="cp-forum__setup-card",
         ),
+        html.Div(id="forum-output", className="mt-3"),
     ], className="p-3")
 
 
@@ -2849,12 +3786,12 @@ def _tab_audit() -> html.Div:
 def _tab_content() -> dbc.Tabs:
     """Horizontal tab bar for the 6 LLM role interfaces."""
     return dbc.Tabs([
-        dbc.Tab(_tab_scenario(), label="Scenario Parser", tab_id="tab-scenario"),
-        dbc.Tab(_tab_chat(), label="Chat Interpreter", tab_id="tab-chat"),
-        dbc.Tab(_tab_profile(), label="Profile Generator", tab_id="tab-profile"),
-        dbc.Tab(_tab_annotations(), label="Annotations", tab_id="tab-annotations"),
-        dbc.Tab(_tab_forums(), label="Agent Forums", tab_id="tab-forums"),
-        dbc.Tab(_tab_audit(), label="Audit Log", tab_id="tab-audit"),
+        dbc.Tab(_tab_scenario(), label=_llm_tab_label("R1", "Scenario Parser"), tab_id="tab-scenario"),
+        dbc.Tab(_tab_chat(), label=_llm_tab_label("R3", "Chat Interpreter"), tab_id="tab-chat"),
+        dbc.Tab(_tab_profile(), label=_llm_tab_label("R2", "Profile Generator"), tab_id="tab-profile"),
+        dbc.Tab(_tab_annotations(), label=_llm_tab_label("R4", "Annotations"), tab_id="tab-annotations"),
+        dbc.Tab(_tab_forums(), label=_llm_tab_label("R5", "Agent Forums"), tab_id="tab-forums"),
+        dbc.Tab(_tab_audit(), label=_llm_tab_label("ALL", "Audit Log"), tab_id="tab-audit"),
     ], id="llm-tabs", active_tab="tab-scenario", className="cp-tabs")
 
 
@@ -2862,6 +3799,9 @@ def layout() -> html.Div:
     """Build the LLM Studio page with a guaranteed remount trigger."""
     return html.Div([
         dcc.Interval(id="llm-studio-mount-interval", interval=50, n_intervals=0, max_intervals=1),
+        # Polling interval for forum processing — disabled when no forum is pending.
+        # Replaces the circular store-chaining pattern which stalled in Dash 4.x.
+        dcc.Interval(id="forum-poll-interval", interval=500, n_intervals=0, disabled=True),
         dcc.Store(id="scenario-thread-scroll-store", data=0),
         dcc.Store(id="chat-thread-scroll-store", data=0),
         dcc.Store(id="profile-thread-scroll-store", data=0),
@@ -4016,147 +4956,541 @@ def render_annotations_output(annotation_data, page_state):
 # =========================================================================
 
 @callback(
-    Output("forum-output", "children"),
+    Output("btn-run-forum", "disabled"),
+    Output("btn-stop-forum", "disabled"),
+    Output("btn-clear-forum", "disabled"),
+    Output("forum-fraction-slider", "disabled"),
+    Output("forum-agent-count-input", "disabled"),
+    Output("forum-group-count", "disabled"),
+    Output("forum-num-turns", "disabled"),
+    Output("forum-poll-interval", "disabled"),
+    Input("forum-run-request-store", "data"),
+    Input("forum-history-store", "data"),
+    Input("forum-control-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
+)
+def sync_forum_controls(request, forum_data, forum_control, page_state):
+    """Keep forum controls aligned with the current incremental run state."""
+    state = _normalize_forum_state(forum_data)
+    control_state = _normalize_forum_control_state(forum_control)
+    is_pending = bool(request) and state.get("status") == "pending"
+    return (
+        is_pending,
+        not is_pending or bool(control_state.get("stop_requested")),
+        is_pending,
+        is_pending,
+        is_pending,
+        is_pending,
+        is_pending,
+        not is_pending,  # forum-poll-interval: disabled when NOT pending
+    )
+
+
+@callback(
+    Output("forum-plan-summary", "children"),
+    Input("forum-fraction-slider", "value"),
+    Input("forum-agent-count-input", "value"),
+    Input("forum-group-count", "value"),
+    Input("forum-num-turns", "value"),
+    Input("sim-trigger-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
+)
+def render_forum_plan_summary(fraction, agent_count, group_count, num_turns, sim_trigger, page_state):
+    """Show the live forum scale preview before a run begins."""
+    return _build_forum_scale_summary(
+        float(fraction or 0.20),
+        int(agent_count or 0),
+        int(group_count or 2),
+        int(num_turns or 2),
+    )
+
+
+@callback(
+    Output("forum-history-store", "data", allow_duplicate=True),
+    Output("forum-run-request-store", "data"),
+    Output("forum-control-store", "data"),
     Input("btn-run-forum", "n_clicks"),
     State("forum-fraction-slider", "value"),
-    State("forum-group-size", "value"),
+    State("forum-agent-count-input", "value"),
+    State("forum-group-count", "value"),
     State("forum-num-turns", "value"),
+    State("forum-history-store", "data"),
+    State("forum-control-store", "data"),
     prevent_initial_call=True,
 )
-def run_forum_cb(n_clicks, fraction, group_size, num_turns):
+def stage_forum_request(n_clicks, fraction, agent_count, group_count, num_turns, forum_data, forum_control):
+    """Stage all forum groups immediately so the UI can render before LLM calls finish."""
+    import time
+
+    state = _normalize_forum_state(forum_data)
+    if state.get("status") == "pending":
+        return no_update, no_update, no_update
+
+    current_clicks = int(n_clicks or 0)
+    if current_clicks <= state.get("last_run_clicks", 0):
+        return no_update, no_update, no_update
+
     sim_model = app_state.get_model()
     if sim_model is None:
-        return html.Div("Initialize a simulation first.",
-                        style={"color": "var(--cp-danger)",
-                               "fontSize": "var(--cp-text-sm)"})
+        state.update({
+            "status": "error",
+            "error": "Initialize a simulation first.",
+            "last_run_clicks": current_clicks,
+        })
+        return state, None, _default_forum_control_state()
 
-    import time
-    from model.forums import run_forum_step, format_session_for_api
+    forum_fraction = float(fraction or 0.20)
+    requested_agent_count = int(agent_count or 0)
+    requested_group_count = int(group_count or 2)
+    forum_turns = int(num_turns or 2)
+    groups, plan = _build_forum_groups_snapshot(
+        sim_model,
+        forum_fraction,
+        requested_agent_count,
+        requested_group_count,
+        forum_turns,
+    )
 
+    if not groups:
+        state.update({
+            "status": "error",
+            "error": "Not enough agents are available to form a forum group. Increase the population or adjust the forum settings.",
+            "forum_fraction": forum_fraction,
+            "requested_agent_count": requested_agent_count,
+            "requested_group_count": requested_group_count,
+            "num_turns": forum_turns,
+            "last_run_clicks": current_clicks,
+        })
+        return state, None, _default_forum_control_state()
+
+    request_id = _make_request_id()
     model_name = app_state.get_role_model("role_5")
-    t0 = time.perf_counter()
+    state.update({
+        "status": "pending",
+        "error": None,
+        "note": FORUM_WORKFLOW_NOTE,
+        "model": model_name,
+        "model_instance_id": id(sim_model),
+        "request_id": request_id,
+        "current_step": sim_model.current_step,
+        "forum_fraction": forum_fraction,
+        "requested_agent_count": requested_agent_count,
+        "requested_group_count": requested_group_count,
+        "participant_source": plan.get("participant_source"),
+        "num_turns": forum_turns,
+        "agent_count": plan.get("participant_count"),
+        "group_count": plan.get("actual_group_count"),
+        "group_sizes": plan.get("group_sizes"),
+        "estimated_turns": plan.get("estimated_turns"),
+        "estimated_llm_calls": plan.get("estimated_llm_calls"),
+        "stop_requested": False,
+        "elapsed": None,
+        "generated_at": None,
+        "started_at": time.perf_counter(),
+        "groups": groups,
+        "last_run_clicks": current_clicks,
+    })
+    # Publish to server-side state so interval-driven processing reads
+    # the authoritative copy instead of stale client-side State values.
+    global _forum_server_state, _forum_stop_requested
+    _forum_server_state = dict(state)
+    _forum_stop_requested = False
+
+    request = {
+        "request_id": request_id,
+        "group_index": 0,
+        "model": model_name,
+        "sequence": 0,
+    }
+    control_state = _normalize_forum_control_state(forum_control)
+    control_state.update({
+        "request_id": request_id,
+        "stop_requested": False,
+    })
+    return state, request, control_state
+
+
+@callback(
+    Output("forum-history-store", "data", allow_duplicate=True),
+    Output("forum-run-request-store", "data", allow_duplicate=True),
+    Output("forum-control-store", "data", allow_duplicate=True),
+    Input({"type": "forum-rerun-btn", "index": ALL}, "n_clicks"),
+    State("forum-history-store", "data"),
+    State("forum-control-store", "data"),
+    prevent_initial_call=True,
+)
+def rerun_forum_group(_clicks, forum_data, forum_control):
+    """Stage a rerun for a single completed/failed forum group."""
+    import time
+
+    if not isinstance(ctx.triggered_id, dict):
+        return no_update, no_update, no_update
+
+    state = _normalize_forum_state(forum_data)
+    if state.get("status") == "pending":
+        return no_update, no_update, no_update
+
+    triggered_index = ctx.triggered_id.get("index")
+    if triggered_index is None:
+        return no_update, no_update, no_update
     try:
-        session = run_forum_step(
-            sim_model,
-            forum_fraction=fraction or 0.20,
-            group_size=group_size or 2,
-            num_turns=num_turns or 2,
-            llm_model=model_name,
+        group_index = int(triggered_index)
+    except (TypeError, ValueError):
+        return no_update, no_update, no_update
+    groups = list(state.get("groups") or [])
+    if group_index < 0 or group_index >= len(groups):
+        return no_update, no_update, no_update
+
+    sim_model = app_state.get_model()
+    if sim_model is None:
+        state.update({
+            "status": "error",
+            "error": "The active simulation is no longer available. Re-initialize the model before rerunning this group.",
+        })
+        return state, None, _default_forum_control_state()
+
+    current_clicks = int((ctx.triggered or [{}])[0].get("value") or 0)
+    group_state = dict(groups[group_index])
+    if current_clicks <= int(group_state.get("last_rerun_clicks") or 0):
+        return no_update, no_update, no_update
+
+    group_state.update({
+        "status": "active",
+        "turns": [],
+        "turn_cursor": 0,
+        "total_turns": len(group_state.get("agent_ids") or []) * int(state.get("num_turns") or 0),
+        "outcome": None,
+        "delta_applied": 0.0,
+        "preference_updates": [],
+        "elapsed": 0.0,
+        "error": None,
+        "last_rerun_clicks": current_clicks,
+        "stop_note": None,
+    })
+    groups[group_index] = group_state
+
+    request_id = _make_request_id()
+    model_name = app_state.get_role_model("role_5")
+    state.update({
+        "status": "pending",
+        "error": None,
+        "model": model_name,
+        "request_id": request_id,
+        "model_instance_id": id(sim_model),
+        "current_step": int(sim_model.current_step or 0),
+        "elapsed": None,
+        "generated_at": None,
+        "started_at": time.perf_counter(),
+        "groups": groups,
+        "note": (
+            "Rerunning one selected group from the current simulation state. "
+            "The rest of the workspace stays visible while the new dialogue is generated."
+        ),
+        "stop_requested": False,
+    })
+
+    global _forum_server_state, _forum_stop_requested
+    _forum_server_state = dict(state)
+    _forum_stop_requested = False
+
+    request = {
+        "request_id": request_id,
+        "group_index": group_index,
+        "model": model_name,
+        "sequence": 0,
+    }
+    control_state = _normalize_forum_control_state(forum_control)
+    control_state.update({
+        "request_id": request_id,
+        "stop_requested": False,
+    })
+    return state, request, control_state
+
+
+@callback(
+    Output("forum-control-store", "data", allow_duplicate=True),
+    Input("btn-stop-forum", "n_clicks"),
+    State("forum-history-store", "data"),
+    State("forum-control-store", "data"),
+    prevent_initial_call=True,
+)
+def request_forum_stop(n_clicks, forum_data, forum_control):
+    """Request a graceful stop after the current in-flight forum turn."""
+    state = _normalize_forum_state(forum_data)
+    control_state = _normalize_forum_control_state(forum_control)
+    if state.get("status") != "pending" or not state.get("request_id"):
+        return no_update
+
+    current_clicks = int(n_clicks or 0)
+    if current_clicks <= control_state.get("last_stop_clicks", 0):
+        return no_update
+
+    global _forum_stop_requested
+    _forum_stop_requested = True
+
+    control_state.update({
+        "request_id": state.get("request_id"),
+        "stop_requested": True,
+        "last_stop_clicks": current_clicks,
+    })
+    return control_state
+
+
+@callback(
+    Output("forum-history-store", "data", allow_duplicate=True),
+    Output("forum-run-request-store", "data", allow_duplicate=True),
+    Input("forum-poll-interval", "n_intervals"),
+    State("forum-run-request-store", "data"),
+    prevent_initial_call=True,
+)
+def process_forum_request(_n_intervals, request):
+    """Advance the forum by one serial step on each polling tick.
+
+    Reads from the server-side ``_forum_server_state`` under a lock so that
+    concurrent interval ticks (which carry stale client-side State values)
+    never duplicate work. The updated state is written back to both the
+    server variable and the ``forum-history-store`` output for UI rendering.
+    """
+    global _forum_server_state, _forum_stop_requested
+    if not request:
+        return no_update, no_update
+
+    server_state = _copy_forum_state(_forum_server_state)
+    if server_state is not None and server_state.get("status") != "pending":
+        # A newer poll request can overtake the final long-running LLM response
+        # in Dash's client queue. Replay the authoritative terminal snapshot so
+        # the browser clears the pending request instead of polling forever.
+        return server_state, None
+
+    # Non-blocking lock — if another tick is already processing, replay the
+    # latest authoritative snapshot instead of returning no_update. This keeps
+    # the browser in sync even when a long LLM call causes an older response to
+    # be superseded by newer interval ticks on the client.
+    if not _forum_lock.acquire(blocking=False):
+        if server_state is None:
+            return no_update, no_update
+        return server_state, request
+
+    try:
+        if _forum_server_state is None:
+            return no_update, None
+
+        import time
+        from model.forums import (
+            apply_forum_outcome,
+            extract_forum_outcome_from_turns,
+            run_forum_turn,
         )
-        elapsed = time.perf_counter() - t0
-        session_data = format_session_for_api(session)
-        _record_audit(
-            "Role 5",
-            "agent_forums",
-            model_name,
-            f"fraction={fraction}, groups={group_size}",
-            f"{len(session_data.get('groups', []))} groups",
-            elapsed,
-            input_payload={
-                "forum_fraction": fraction or 0.20,
-                "group_size": group_size or 2,
-                "num_turns": num_turns or 2,
-                "model": model_name,
-            },
-            output_payload=session_data,
-        )
 
-        group_cards = []
-        for gi, group in enumerate(session_data.get("groups", [])):
-            # Build dialogue bubbles
-            bubbles = []
-            for turn in group.get("turns", []):
-                bubbles.append(html.Div([
-                    html.Div(
-                        turn.get("speaker_label", "Agent"),
-                        className="cp-chat__sender",
-                    ),
-                    html.Div(turn.get("content", "")),
-                ], className="cp-chat__message cp-chat__message--ai"))
+        # Read from server-side authoritative state, not stale client State.
+        state = _copy_forum_state(_forum_server_state)
+        if state is None:
+            return no_update, None
+        if state.get("status") != "pending":
+            return state, None
 
-            outcome = group.get("outcome", {}) or {}
-            norm_signal = outcome.get("norm_signal", 0)
-            confidence = outcome.get("confidence", 0)
-            summary = outcome.get("summary", "No consensus extracted")
+        model_name = str(state.get("model") or app_state.get_role_model("role_5"))
 
-            norm_color = CHART_COLORWAY[2] if norm_signal < 0 else CHART_COLORWAY[1]
-            norm_label = f"{'→ Autonomy' if norm_signal < 0 else '→ Delegation'}"
-
-            group_cards.append(card(
-                title=f"Group {gi + 1}",
-                subtitle=f"Agents {group.get('agent_ids', [])}",
-                children=[
-                    html.Div(bubbles, className="cp-chat",
-                             style={"maxHeight": "200px", "overflowY": "auto"}),
-                    html.Hr(),
-                    dbc.Row([
-                        dbc.Col([
-                            html.Div("Norm Signal", style={"fontSize": "var(--cp-text-xs)",
-                                                           "color": "var(--cp-text-tertiary)"}),
-                            html.Div(
-                                f"{norm_signal:+.2f} {norm_label}",
-                                style={"fontWeight": "var(--cp-weight-bold)",
-                                       "color": norm_color},
-                            ),
-                        ], md=3),
-                        dbc.Col([
-                            html.Div("Confidence", style={"fontSize": "var(--cp-text-xs)",
-                                                          "color": "var(--cp-text-tertiary)"}),
-                            html.Div(f"{confidence:.2f}",
-                                     style={"fontWeight": "var(--cp-weight-bold)"}),
-                        ], md=3),
-                        dbc.Col([
-                            html.Div("Delta Applied",
-                                     style={"fontSize": "var(--cp-text-xs)",
-                                            "color": "var(--cp-text-tertiary)"}),
-                            html.Div(f"{group.get('delta_applied', 0):+.4f}",
-                                     style={"fontFamily": "var(--cp-font-mono)"}),
-                        ], md=3),
-                        dbc.Col([
-                            html.Div("Summary", style={"fontSize": "var(--cp-text-xs)",
-                                                       "color": "var(--cp-text-tertiary)"}),
-                            html.Div(summary, style={"fontSize": "var(--cp-text-sm)"}),
-                        ], md=3),
-                    ]),
-                ],
-            ))
-
-        return html.Div([
-            html.Div([
-                html.Span(f"Completed in {elapsed:.1f}s · {model_name} · ",
-                          style={"fontSize": "var(--cp-text-sm)",
-                                 "color": "var(--cp-text-secondary)"}),
-                html.Span(
-                    f"{session_data.get('n_agents_participating', 0)} agents, "
-                    f"{len(session_data.get('groups', []))} groups",
-                    style={"fontSize": "var(--cp-text-sm)",
-                           "fontWeight": "var(--cp-weight-semibold)"},
+        sim_model = app_state.get_model()
+        if sim_model is None:
+            final_state = _finalize_forum_error_state(
+                state,
+                "The active simulation is no longer available. Re-initialize the model before running the forum again.",
+            )
+            _record_forum_audit(final_state, model_name)
+            _forum_server_state = final_state
+            return final_state, None
+        if (
+            state.get("model_instance_id") is not None
+            and int(state.get("model_instance_id")) != id(sim_model)
+        ) or int(state.get("current_step") or 0) != int(getattr(sim_model, "current_step", 0) or 0):
+            final_state = _finalize_forum_error_state(
+                state,
+                (
+                    "The active simulation changed after this forum was staged. "
+                    "Run the forum again from the current simulation state."
                 ),
-            ], className="mb-3"),
-            *group_cards,
-        ])
-    except Exception as e:
-        elapsed = time.perf_counter() - t0
-        _record_audit(
-            "Role 5",
-            "agent_forums",
-            model_name,
-            f"fraction={fraction}",
-            None,
-            elapsed,
-            str(e),
-            input_payload={
-                "forum_fraction": fraction or 0.20,
-                "group_size": group_size or 2,
-                "num_turns": num_turns or 2,
-                "model": model_name,
-            },
-            output_payload={"error": str(e)},
-        )
-        return html.Div(
-            f"Error: {e}",
-            style={"color": "var(--cp-danger)", "fontSize": "var(--cp-text-sm)"},
-        )
+            )
+            _record_forum_audit(final_state, model_name)
+            _forum_server_state = final_state
+            return final_state, None
+
+        stop_requested = _forum_stop_requested
+        groups = list(state.get("groups") or [])
+
+        # --- Find the active group to process ---
+        group_index: int | None = None
+        for i, g in enumerate(groups):
+            if g.get("status") in ("active", "waiting_outcome"):
+                group_index = i
+                break
+
+        if group_index is None:
+            final_state = _finalize_forum_state(state, stopped=stop_requested)
+            _record_forum_audit(
+                final_state,
+                str(final_state.get("model") or app_state.get_role_model("role_5")),
+            )
+            _forum_server_state = final_state
+            return final_state, None
+
+        group_state = dict(groups[group_index])
+        agent_ids = [int(agent_id) for agent_id in group_state.get("agent_ids", [])]
+        agent_map = {int(agent.unique_id): agent for agent in sim_model.agents}
+        group_agents = [agent_map[agent_id] for agent_id in agent_ids if agent_id in agent_map]
+        if len(group_agents) != len(agent_ids):
+            group_state.update({
+                "status": "error",
+                "error": "One or more forum participants are no longer available in the active simulation.",
+            })
+            groups[group_index] = group_state
+            next_index = _advance_to_next_queued_forum_group(groups, after_index=group_index)
+            if next_index is not None:
+                groups[next_index] = dict(groups[next_index])
+                groups[next_index]["status"] = "active"
+            state["groups"] = groups
+            if next_index is None:
+                final_state = _finalize_forum_state(state)
+                _record_forum_audit(final_state, model_name)
+                _forum_server_state = final_state
+                return final_state, None
+            _forum_server_state = state
+            return state, request
+
+        turn_cursor = int(group_state.get("turn_cursor") or 0)
+        total_turns = int(group_state.get("total_turns") or 0)
+
+        try:
+            if stop_requested:
+                stopped_state = _stop_forum_groups_gracefully(
+                    state,
+                    group_index=group_index,
+                    group_agents=group_agents,
+                    model_name=model_name,
+                )
+                _record_forum_audit(stopped_state, model_name)
+                _forum_server_state = stopped_state
+                return stopped_state, None
+
+            if turn_cursor < total_turns:
+                speaker = group_agents[turn_cursor % len(group_agents)]
+                t0 = time.perf_counter()
+                turn = run_forum_turn(
+                    speaker,
+                    group_agents,
+                    _forum_group_turns(group_state.get("turns")),
+                    step=int(state.get("current_step") or 0),
+                    llm_model=model_name,
+                )
+                elapsed = time.perf_counter() - t0
+                group_state["turns"] = list(group_state.get("turns") or []) + [{
+                    "speaker_id": turn.speaker_id,
+                    "speaker_label": turn.speaker_label,
+                    "content": turn.content,
+                }]
+                group_state["turn_cursor"] = turn_cursor + 1
+                group_state["elapsed"] = round(float(group_state.get("elapsed") or 0.0) + elapsed, 2)
+                group_state["status"] = "waiting_outcome" if group_state["turn_cursor"] >= total_turns else "active"
+                groups[group_index] = group_state
+                state["groups"] = groups
+                _forum_server_state = state
+                return state, request
+
+            t0 = time.perf_counter()
+            outcome = extract_forum_outcome_from_turns(
+                _forum_group_turns(group_state.get("turns")),
+                step=int(state.get("current_step") or 0),
+                agent_ids=agent_ids,
+                llm_model=model_name,
+            )
+            elapsed = time.perf_counter() - t0
+            group_state["elapsed"] = round(float(group_state.get("elapsed") or 0.0) + elapsed, 2)
+
+            if outcome is None:
+                group_state.update({
+                    "status": "error",
+                    "error": "The dialogue finished, but no norm signal could be extracted from this group.",
+                })
+            else:
+                delta, preference_updates = apply_forum_outcome(group_agents, outcome)
+                group_state.update({
+                    "status": "success",
+                    "outcome": outcome.model_dump(),
+                    "delta_applied": round(delta, 4),
+                    "preference_updates": preference_updates,
+                    "error": None,
+                })
+
+            groups[group_index] = group_state
+            next_index = _advance_to_next_queued_forum_group(groups, after_index=group_index)
+            if next_index is not None:
+                groups[next_index] = dict(groups[next_index])
+                groups[next_index]["status"] = "active"
+                state["groups"] = groups
+                _forum_server_state = state
+                return state, request
+
+            state["groups"] = groups
+            final_state = _finalize_forum_state(state)
+            _record_forum_audit(final_state, model_name)
+            _forum_server_state = final_state
+            return final_state, None
+        except Exception as e:
+            group_state.update({
+                "status": "error",
+                "error": f"Error: {e}",
+            })
+            groups[group_index] = group_state
+            next_index = _advance_to_next_queued_forum_group(groups, after_index=group_index)
+            if next_index is not None:
+                groups[next_index] = dict(groups[next_index])
+                groups[next_index]["status"] = "active"
+                state["groups"] = groups
+                _forum_server_state = state
+                return state, request
+
+            state["groups"] = groups
+            final_state = _finalize_forum_state(state)
+            _record_forum_audit(final_state, model_name)
+            _forum_server_state = final_state
+            return final_state, None
+    finally:
+        _forum_lock.release()
+
+
+@callback(
+    Output("forum-history-store", "data", allow_duplicate=True),
+    Output("forum-run-request-store", "data", allow_duplicate=True),
+    Output("forum-run-dispatch-store", "data", allow_duplicate=True),
+    Output("forum-control-store", "data", allow_duplicate=True),
+    Input("btn-clear-forum", "n_clicks"),
+    State("forum-history-store", "data"),
+    prevent_initial_call=True,
+)
+def clear_forum_output(n_clicks, forum_data):
+    """Clear the persisted forum workspace so the user can start over."""
+    global _forum_server_state, _forum_stop_requested
+    state = _normalize_forum_state(forum_data)
+    current_clicks = int(n_clicks or 0)
+    if current_clicks <= state.get("last_clear_clicks", 0):
+        return no_update, no_update, no_update, no_update
+
+    _forum_server_state = None
+    _forum_stop_requested = False
+    reset_state = _default_forum_state()
+    reset_state["last_run_clicks"] = state.get("last_run_clicks", 0)
+    reset_state["last_clear_clicks"] = current_clicks
+    return reset_state, None, None, _default_forum_control_state()
+
+
+@callback(
+    Output("forum-output", "children"),
+    Input("forum-history-store", "data"),
+    Input("llm-studio-mount-interval", "n_intervals"),
+)
+def render_forum_output(forum_data, page_state):
+    """Rebuild the Agent Forums workspace from the in-memory store."""
+    return _build_forum_output(forum_data)
 
 
 # =========================================================================
