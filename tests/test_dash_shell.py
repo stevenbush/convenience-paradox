@@ -75,6 +75,17 @@ def test_app_layout_exposes_session_store_for_llm_studio() -> None:
         if isinstance(child, dcc.Store) and child.id == "scenario-parse-request-store"
     )
     assert scenario_queue.data is None
+    chat_store = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "chat-history-store"
+    )
+    assert chat_store.storage_type == "session"
+    assert chat_store.data == {}
+    chat_queue = next(
+        child for child in layout.children
+        if isinstance(child, dcc.Store) and child.id == "chat-interpret-request-store"
+    )
+    assert chat_queue.data is None
 
 
 def test_llm_studio_parser_input_uses_session_persistence() -> None:
@@ -98,6 +109,27 @@ def test_llm_studio_parser_input_uses_session_persistence() -> None:
     assert actions.children[0].id == "btn-parse-scenario"
     assert actions.children[1].id == "btn-clear-scenario"
     assert actions.children[1].children[1] == "Clear Conversation"
+
+
+def test_llm_studio_chat_tab_uses_conversation_layout() -> None:
+    """Chat Interpreter should mirror the Scenario Parser conversation layout."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    chat_tab = llm_studio._tab_chat()
+    intro = chat_tab.children[0]
+    conversation_card = chat_tab.children[1].children[0].children[0]
+    card_body = conversation_card.children[1]
+    textarea = card_body.children[1].children[0]
+    actions = card_body.children[1].children[1]
+
+    assert intro.className == "cp-scenario-guide"
+    assert card_body.children[0].id == "chat-thread"
+    assert textarea.id == "chat-input"
+    assert textarea.persistence is True
+    assert textarea.persistence_type == "session"
+    assert actions.children[0].id == "btn-chat-send"
+    assert actions.children[1].id == "btn-clear-chat"
 
 
 def test_model_configuration_is_collapsed_by_default() -> None:
@@ -226,6 +258,101 @@ def test_llm_studio_clear_resets_scenario_conversation() -> None:
 
     assert cleared_input == ""
     assert cleared_state["scenario"] == llm_studio._default_scenario_state()
+
+
+def test_llm_studio_stages_pending_chat_request() -> None:
+    """Submitting a chat question should create a user turn and pending interpreter turn."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    context = {
+        "initialized": True,
+        "current_step": 24,
+        "preset": "custom",
+        "note": "This snapshot is injected into the interpreter prompt together with your question.",
+        "latest_metrics": {"avg_stress": 0.21, "avg_delegation_rate": 0.58},
+        "params": {"delegation_preference_mean": 0.55, "service_cost_factor": 0.4},
+    }
+
+    state = llm_studio._stage_chat_request(
+        {},
+        "Why is stress rising now?",
+        "qwen3.5:4b",
+        "chat-1",
+        context,
+    )
+
+    chat_state = llm_studio._normalize_chat_state(state)
+    assert chat_state["status"] == "pending"
+    assert chat_state["request_id"] == "chat-1"
+    assert chat_state["context"]["current_step"] == 24
+    assert len(chat_state["history"]) == 2
+    assert chat_state["history"][0]["role"] == "user"
+    assert chat_state["history"][1]["status"] == "pending"
+
+
+def test_llm_studio_chat_context_panel_shows_current_snapshot() -> None:
+    """Chat Interpreter should show the grounded simulation snapshot being interpreted."""
+    create_app()
+    from dash_app.pages import llm_studio
+
+    context = {
+        "initialized": True,
+        "current_step": 18,
+        "preset": "type_b",
+        "note": "This snapshot is injected into the interpreter prompt together with your question.",
+        "latest_metrics": {
+            "avg_stress": 0.18,
+            "avg_delegation_rate": 0.74,
+            "total_labor_hours": 411.2,
+        },
+        "params": {
+            "delegation_preference_mean": 0.72,
+            "service_cost_factor": 0.2,
+            "social_conformity_pressure": 0.65,
+            "tasks_per_step_mean": 3.5,
+            "num_agents": 100,
+            "network_type": "small_world",
+        },
+    }
+    pending_state = llm_studio._stage_chat_request(
+        {},
+        "What does this run suggest?",
+        "qwen3.5:4b",
+        "chat-ctx",
+        context,
+    )
+    store_data = llm_studio._complete_chat_request(
+        pending_state,
+        "chat-ctx",
+        "qwen3.5:4b",
+        1.4,
+        context_snapshot=context,
+        result={
+            "answer": "The run suggests delegation is outpacing well-being gains.",
+            "detailed_explanation": "Stress remains elevated while labor hours stay high, which points to coordination costs.",
+            "hypothesis_connection": "H1",
+            "confidence_note": "This is still an early-stage run.",
+        },
+    )
+
+    chat_state = llm_studio._normalize_chat_state(store_data)
+    thread = llm_studio._build_chat_thread(chat_state)
+    context_panel = llm_studio._build_chat_context_panel(chat_state)
+
+    assert thread.className == "cp-chat"
+    assert context_panel.className == "cp-card"
+    header = context_panel.children[0]
+    title_wrap = header.children[0]
+    assert title_wrap.children[0].children == "Current Interpretation Context"
+
+    body = context_panel.children[1]
+    assert body.children[1].children.startswith("This snapshot is injected")
+    metrics_table = body.children[3]
+    assert metrics_table.children.children[0].children[0].children == "Avg Stress"
+    params_table = body.children[5]
+    assert params_table.children.children[0].children[0].children == "Delegation Mean"
+    assert "context JSON" in body.children[7].children[0].children
 
 
 def test_llm_studio_rehydrates_active_tab_and_scenario_result() -> None:

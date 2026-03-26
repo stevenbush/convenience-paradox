@@ -67,8 +67,11 @@ def _build_layout() -> html.Div:
             # Scenario Parser request queue — used to show a pending state before LLM returns.
             dcc.Store(id="scenario-parse-request-store", data=None),
 
-            # LLM chat history for the Result Interpreter (Role 3)
-            dcc.Store(id="chat-history-store", data=[]),
+            # Result Interpreter request queue — used to stage the chat turn before the LLM returns.
+            dcc.Store(id="chat-interpret-request-store", data=None),
+
+            # Result Interpreter UI state — persisted across page navigation in this browser tab.
+            dcc.Store(id="chat-history-store", data={}, storage_type="session"),
 
             # LLM audit log trigger — updated after each LLM call
             dcc.Store(id="audit-trigger-store", data=0),

@@ -90,6 +90,24 @@ SCENARIO_NEXT_STEP_GUIDANCE = (
     "30 to 50 steps."
 )
 
+CHAT_CONTEXT_METRICS = [
+    ("avg_stress", "Avg Stress"),
+    ("avg_delegation_rate", "Delegation Rate"),
+    ("total_labor_hours", "Total Labor Hours"),
+    ("social_efficiency", "Social Efficiency"),
+    ("unmatched_tasks", "Unmatched Tasks"),
+    ("avg_income", "Avg Income"),
+]
+
+CHAT_CONTEXT_PARAMS = [
+    ("delegation_preference_mean", "Delegation Mean"),
+    ("service_cost_factor", "Service Cost"),
+    ("social_conformity_pressure", "Conformity"),
+    ("tasks_per_step_mean", "Tasks / Step"),
+    ("num_agents", "Num Agents"),
+    ("network_type", "Network"),
+]
+
 
 def _default_llm_studio_state() -> dict[str, Any]:
     """Return the default browser-session state for the LLM Studio page."""
@@ -600,6 +618,352 @@ def _build_scenario_output(scenario_state: dict[str, Any] | None):
     )
 
 
+def _default_chat_state() -> dict[str, Any]:
+    """Return the initial Result Interpreter state."""
+    return {
+        "status": "idle",
+        "error": None,
+        "elapsed": None,
+        "model": None,
+        "request_id": None,
+        "history": [],
+        "context": None,
+        "raw_response": None,
+    }
+
+
+def _normalize_chat_state(data: dict[str, Any] | list[Any] | None) -> dict[str, Any]:
+    """Merge arbitrary chat store payloads with the expected Interpreter schema."""
+    state = _default_chat_state()
+
+    # Backward compatibility for the previous store shape: a plain history list.
+    if isinstance(data, list):
+        state["history"] = [item for item in data if isinstance(item, dict)]
+        if state["history"]:
+            state["status"] = "success"
+        return state
+
+    if not isinstance(data, dict):
+        return state
+
+    state["status"] = str(data.get("status") or "idle")
+    state["error"] = data.get("error")
+    state["elapsed"] = data.get("elapsed")
+    state["model"] = data.get("model")
+    state["request_id"] = data.get("request_id")
+    state["raw_response"] = data.get("raw_response")
+    history = data.get("history")
+    if isinstance(history, list):
+        state["history"] = [item for item in history if isinstance(item, dict)]
+    context_snapshot = data.get("context")
+    if isinstance(context_snapshot, dict):
+        state["context"] = context_snapshot
+
+    return state
+
+
+def _compact_value(value: Any) -> Any:
+    """Round floats for compact context display while leaving other values untouched."""
+    if isinstance(value, float):
+        return round(value, 4)
+    return value
+
+
+def _build_chat_context_snapshot() -> dict[str, Any]:
+    """Build the exact simulation snapshot injected into the Result Interpreter."""
+    sim_model = app_state.get_model()
+    preset = app_state.get_current_preset() or "custom"
+
+    if sim_model is None or sim_model.current_step == 0:
+        return {
+            "initialized": False,
+            "current_step": 0,
+            "preset": preset,
+            "note": "No simulation results are available yet. Initialize a simulation and run at least one step to ground the interpretation in data.",
+            "latest_metrics": {},
+            "params": {},
+        }
+
+    df = sim_model.get_model_dataframe()
+    latest = df.iloc[-1].to_dict() if not df.empty else {}
+    params = sim_model.get_params()
+
+    return {
+        "initialized": True,
+        "current_step": sim_model.current_step,
+        "preset": preset,
+        "note": "This snapshot is injected into the interpreter prompt together with your question.",
+        "latest_metrics": {
+            key: _compact_value(latest.get(key))
+            for key, _ in CHAT_CONTEXT_METRICS
+            if key in latest
+        },
+        "params": {
+            key: _compact_value(params.get(key))
+            for key, _ in CHAT_CONTEXT_PARAMS
+            if key in params
+        },
+    }
+
+
+def _build_chat_intro():
+    """Render a compact guide for the Result Interpreter tab."""
+    return html.Div(
+        [
+            html.Div("How To Use Chat Interpreter", className="cp-scenario-guide__label"),
+            html.Div(
+                "Ask questions about the current simulation run. Your message is sent together with the latest experiment snapshot, and the interpreter explains the results, connects them to hypotheses, and notes important caveats.",
+                className="cp-scenario-guide__text",
+            ),
+        ],
+        className="cp-scenario-guide",
+    )
+
+
+def _build_chat_context_panel(chat_state: dict[str, Any] | None):
+    """Render the current simulation snapshot being interpreted."""
+    chat_state = chat_state or {}
+    context_snapshot = chat_state.get("context") or _build_chat_context_snapshot()
+    initialized = bool(context_snapshot.get("initialized"))
+    subtitle = "Simulation snapshot injected into the interpreter"
+
+    if not initialized:
+        return card(
+            title="Current Interpretation Context",
+            subtitle=subtitle,
+            children=_scenario_placeholder(str(context_snapshot.get("note") or "No simulation context available.")),
+        )
+
+    summary_badges = html.Div(
+        [
+            status_badge(f"Step {context_snapshot.get('current_step', 0)}", "info"),
+            status_badge(f"Preset: {str(context_snapshot.get('preset', 'custom')).replace('_', ' ').title()}", "neutral"),
+            status_badge("Live results", "success"),
+        ],
+        className="d-flex gap-2 flex-wrap mb-3",
+    )
+
+    metric_rows = [
+        html.Tr([
+            html.Td(label, style={"fontSize": "var(--cp-text-sm)"}),
+            html.Td(
+                _format_scenario_value((context_snapshot.get("latest_metrics") or {}).get(key)),
+                style={"fontFamily": "var(--cp-font-mono)", "fontSize": "var(--cp-text-sm)"},
+            ),
+        ])
+        for key, label in CHAT_CONTEXT_METRICS
+        if key in (context_snapshot.get("latest_metrics") or {})
+    ]
+
+    param_rows = [
+        html.Tr([
+            html.Td(label, style={"fontSize": "var(--cp-text-sm)"}),
+            html.Td(
+                _format_scenario_value((context_snapshot.get("params") or {}).get(key)),
+                style={"fontFamily": "var(--cp-font-mono)", "fontSize": "var(--cp-text-sm)"},
+            ),
+        ])
+        for key, label in CHAT_CONTEXT_PARAMS
+        if key in (context_snapshot.get("params") or {})
+    ]
+
+    children = [
+        summary_badges,
+        html.Div(str(context_snapshot.get("note") or ""), className="cp-scenario__reply-reasoning"),
+        html.Div("Latest Metrics", className="cp-scenario__section-label"),
+        dbc.Table(html.Tbody(metric_rows), bordered=True, size="sm", className="mt-2"),
+        html.Div("Model Parameters", className="cp-scenario__section-label"),
+        dbc.Table(html.Tbody(param_rows), bordered=True, size="sm", className="mt-2"),
+    ]
+
+    raw_block = _build_scenario_raw_output(
+        context_snapshot,
+        summary_text="View injected context JSON",
+    )
+    if raw_block is not None:
+        children.extend([
+            html.Div("Prompt Context", className="cp-scenario__section-label"),
+            raw_block,
+        ])
+
+    return card(
+        title="Current Interpretation Context",
+        subtitle=subtitle,
+        children=children,
+    )
+
+
+def _build_chat_thread(chat_state: dict[str, Any] | None):
+    """Render the chat-style Result Interpreter transcript."""
+    chat_state = chat_state or {}
+    history = chat_state.get("history") or []
+    if not history:
+        return _scenario_placeholder(
+            "Ask a question about your simulation results and the interpreter will ground the answer in the current experiment snapshot."
+        )
+
+    bubbles = []
+    for message in history:
+        if message.get("role") == "user":
+            bubbles.append(
+                html.Div([
+                    html.Div("You", className="cp-chat__sender"),
+                    html.Div(message.get("content", "")),
+                ], className="cp-chat__message cp-chat__message--user")
+            )
+            continue
+
+        meta = []
+        if message.get("model"):
+            meta.append(str(message.get("model")))
+        if isinstance(message.get("elapsed"), (int, float)):
+            meta.append(f"{message['elapsed']:.1f}s")
+
+        body_children = [
+            html.Div("Chat Interpreter", className="cp-chat__sender"),
+            html.Div(
+                message.get("content", ""),
+                className="cp-scenario__reply-summary",
+            ),
+        ]
+
+        if message.get("status") == "pending":
+            body_children.extend([
+                html.Div(
+                    "Reviewing the latest simulation snapshot, recent metrics, and parameter settings before answering.",
+                    className="cp-scenario__reply-reasoning",
+                ),
+                html.Div(
+                    [
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                        html.Span(className="cp-scenario__thinking-dot"),
+                    ],
+                    className="cp-scenario__thinking",
+                ),
+            ])
+        elif message.get("status") == "error":
+            body_children.append(
+                html.Div(
+                    message.get("error", "Interpreter failed."),
+                    className="cp-scenario__reply-error",
+                )
+            )
+        else:
+            details = message.get("details", "")
+            if details:
+                body_children.append(
+                    html.Div(details, className="cp-scenario__reply-reasoning")
+                )
+
+            summary_badges = []
+            if message.get("hypothesis"):
+                summary_badges.append(status_badge(str(message.get("hypothesis")), "primary"))
+            if message.get("confidence"):
+                summary_badges.append(status_badge("Caveat included", "warning"))
+            if summary_badges:
+                body_children.append(
+                    html.Div(summary_badges, className="d-flex gap-2 flex-wrap mt-3")
+                )
+            if message.get("confidence"):
+                body_children.append(
+                    html.Div(
+                        f"Caveat: {message.get('confidence')}",
+                        className="cp-scenario__reply-reasoning",
+                    )
+                )
+
+        if meta:
+            body_children.append(
+                html.Div(" · ".join(meta), className="cp-scenario__message-meta")
+            )
+
+        bubbles.append(
+            html.Div(
+                body_children,
+                className="cp-chat__message cp-chat__message--ai cp-scenario__assistant-message",
+            )
+        )
+
+    return html.Div(bubbles, className="cp-chat")
+
+
+def _stage_chat_request(
+    chat_data: dict[str, Any] | list[Any] | None,
+    question: str,
+    model_name: str,
+    request_id: str,
+    context_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Append the user turn and a pending assistant turn before interpretation returns."""
+    state = _normalize_chat_state(chat_data)
+    state.update({
+        "status": "pending",
+        "error": None,
+        "elapsed": None,
+        "model": model_name,
+        "request_id": request_id,
+        "context": context_snapshot,
+        "raw_response": None,
+    })
+    state["history"].append({
+        "id": f"{request_id}-user",
+        "role": "user",
+        "content": question,
+    })
+    state["history"].append({
+        "id": f"{request_id}-assistant",
+        "role": "assistant",
+        "request_id": request_id,
+        "status": "pending",
+        "model": model_name,
+        "content": "Preparing a grounded interpretation of your simulation results.",
+    })
+    return state
+
+
+def _complete_chat_request(
+    chat_data: dict[str, Any] | list[Any] | None,
+    request_id: str,
+    model_name: str,
+    elapsed: float,
+    *,
+    result: dict[str, Any] | None = None,
+    context_snapshot: dict[str, Any] | None = None,
+    raw_response: Any = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Replace the pending Interpreter turn with the final assistant reply."""
+    state = _normalize_chat_state(chat_data)
+    is_success = error is None and result is not None
+
+    for message in state["history"]:
+        if message.get("role") == "assistant" and message.get("request_id") == request_id:
+            message.update({
+                "status": "success" if is_success else "error",
+                "model": model_name,
+                "elapsed": elapsed,
+                "content": (result or {}).get("answer", "Interpretation ready.") if is_success else error,
+                "details": (result or {}).get("detailed_explanation", "") if is_success else "",
+                "hypothesis": (result or {}).get("hypothesis_connection", "") if is_success else "",
+                "confidence": (result or {}).get("confidence_note", "") if is_success else "",
+                "raw_response": raw_response,
+                "error": error,
+            })
+            break
+
+    state.update({
+        "status": "success" if is_success else "error",
+        "error": error,
+        "elapsed": elapsed,
+        "model": model_name,
+        "request_id": request_id,
+        "context": context_snapshot or state.get("context"),
+        "raw_response": raw_response,
+    })
+    return state
+
+
 # =========================================================================
 # Layout helpers
 # =========================================================================
@@ -800,42 +1164,56 @@ def _tab_scenario() -> html.Div:
 def _tab_chat() -> html.Div:
     """Role 3: Result Interpreter — chat interface for asking about simulation."""
     return html.Div([
-        html.Div(
-            id="chat-messages",
-            style={
-                "height": "350px", "overflowY": "auto",
-                "border": "1px solid var(--cp-border)",
-                "borderRadius": "var(--cp-radius-lg)",
-                "padding": "var(--cp-space-3)",
-                "marginBottom": "var(--cp-space-3)",
-                "background": "var(--cp-bg)",
-            },
-            children=html.Div(
-                "Ask a question about your simulation results. "
-                "The AI will interpret the data with hypothesis connections.",
-                style={"color": "var(--cp-text-tertiary)",
-                       "fontSize": "var(--cp-text-sm)",
-                       "textAlign": "center", "marginTop": "140px"},
-            ),
-        ),
-        dbc.InputGroup([
-            dbc.Input(
-                id="chat-input",
-                placeholder="Ask about your simulation (e.g., 'Why is stress rising?')...",
-                type="text",
-            ),
-            dbc.Button(
-                [html.I(className="fas fa-paper-plane")],
-                id="btn-chat-send",
-                className="cp-btn-primary",
+        _build_chat_intro(),
+        dbc.Row([
+            dbc.Col([
+                card(
+                    title="Interpretation Conversation",
+                    subtitle="Ask about the current simulation run, watch the interpreter reason over the live snapshot, then inspect the grounded answer.",
+                    children=[
+                        html.Div(id="chat-thread", className="cp-scenario-thread"),
+                        html.Div(
+                            [
+                                dbc.Textarea(
+                                    id="chat-input",
+                                    placeholder="Ask about the current simulation (e.g., 'Why is stress rising even though delegation is high?')...",
+                                    style={"fontSize": "var(--cp-text-sm)"},
+                                    className="cp-scenario__input",
+                                    persistence=True,
+                                    persistence_type="session",
+                                ),
+                                html.Div(
+                                    [
+                                        dbc.Button(
+                                            [html.I(className="fas fa-paper-plane me-1"), "Ask Interpreter"],
+                                            id="btn-chat-send",
+                                            className="cp-btn-primary",
+                                            size="sm",
+                                        ),
+                                        dbc.Button(
+                                            [html.I(className="fas fa-trash-alt me-1"), "Clear Conversation"],
+                                            id="btn-clear-chat",
+                                            className="cp-btn-outline",
+                                            size="sm",
+                                        ),
+                                    ],
+                                    className="cp-scenario__composer-actions",
+                                ),
+                                html.Div(
+                                    "Your question is sent together with the current simulation snapshot shown on the right.",
+                                    className="cp-scenario__composer-note",
+                                ),
+                            ],
+                            className="cp-scenario-composer",
+                        ),
+                    ],
+                ),
+            ], md=7),
+            dbc.Col(
+                html.Div(id="chat-context-output"),
+                md=5,
             ),
         ]),
-        html.Div(
-            "Context: current simulation metrics are auto-injected.",
-            style={"fontSize": "var(--cp-text-xs)",
-                   "color": "var(--cp-text-tertiary)",
-                   "marginTop": "var(--cp-space-2)"},
-        ),
     ], className="p-3")
 
 
@@ -975,6 +1353,7 @@ def _tab_content() -> dbc.Tabs:
 layout = html.Div([
     dcc.Store(id="llm-studio-page-store", data={"mounted": True}),
     dcc.Store(id="scenario-thread-scroll-store", data=0),
+    dcc.Store(id="chat-thread-scroll-store", data=0),
     html.Div([
         html.H2("LLM Studio", className="cp-page-title"),
         html.P(
@@ -1327,82 +1706,211 @@ clientside_callback(
 
 
 # =========================================================================
-# Callback 12: Chat Interpreter (Role 3)
+# Callback 12: Clear Chat Interpreter conversation
 # =========================================================================
 
 @callback(
-    Output("chat-messages", "children"),
-    Output("chat-history-store", "data"),
+    Output("chat-history-store", "data", allow_duplicate=True),
+    Output("chat-input", "value", allow_duplicate=True),
+    Input("btn-clear-chat", "n_clicks"),
+    prevent_initial_call=True,
+)
+def clear_chat_conversation(n_clicks):
+    """Reset the Result Interpreter transcript so the user can start over."""
+    return _default_chat_state(), ""
+
+
+# =========================================================================
+# Callback 13: Stage Chat Interpreter request immediately
+# =========================================================================
+
+@callback(
+    Output("chat-history-store", "data", allow_duplicate=True),
+    Output("chat-interpret-request-store", "data"),
     Output("chat-input", "value"),
     Input("btn-chat-send", "n_clicks"),
     State("chat-input", "value"),
     State("chat-history-store", "data"),
     prevent_initial_call=True,
 )
-def chat_send_cb(n_clicks, question, history):
+def stage_chat_request(n_clicks, question, chat_data):
+    """Append the user message and a pending assistant bubble before interpretation starts."""
     if not question or not question.strip():
         return no_update, no_update, no_update
 
-    history = history or []
-    history.append({"role": "user", "content": question})
+    context_snapshot = _build_chat_context_snapshot()
+    if not context_snapshot.get("initialized"):
+        state = _normalize_chat_state(chat_data)
+        state.update({
+            "status": "error",
+            "error": str(context_snapshot.get("note") or "No simulation results are available."),
+            "context": context_snapshot,
+        })
+        return state, no_update, no_update
 
-    # Build simulation context
-    sim_model = app_state.get_model()
-    if sim_model is not None and sim_model.current_step > 0:
-        df = sim_model.get_model_dataframe()
-        latest = df.iloc[-1].to_dict()
-        context = {
-            "current_step": sim_model.current_step,
-            "latest_metrics": {k: round(v, 4) if isinstance(v, float) else v
-                               for k, v in latest.items()},
-            "params": sim_model.get_params(),
-        }
-    else:
-        context = {"current_step": 0, "note": "No simulation running."}
+    model_name = app_state.get_role_model("role_3")
+    request_id = _make_request_id()
+    next_state = _stage_chat_request(
+        chat_data,
+        question.strip(),
+        model_name,
+        request_id,
+        context_snapshot,
+    )
+    request = {
+        "request_id": request_id,
+        "question": question.strip(),
+        "model": model_name,
+        "context": context_snapshot,
+    }
+    return next_state, request, ""
+
+
+# =========================================================================
+# Callback 14: Resolve Chat Interpreter request
+# =========================================================================
+
+@callback(
+    Output("chat-history-store", "data", allow_duplicate=True),
+    Input("chat-interpret-request-store", "data"),
+    State("chat-history-store", "data"),
+    prevent_initial_call=True,
+    running=[
+        (Output("btn-chat-send", "disabled"), True, False),
+        (Output("btn-clear-chat", "disabled"), True, False),
+        (Output("chat-input", "disabled"), True, False),
+    ],
+)
+def resolve_chat_request(request, chat_data):
+    """Perform the interpretation and replace the pending bubble with the final reply."""
+    if not request:
+        return no_update
 
     import time
-    model_name = app_state.get_role_model("role_3")
+    from api.llm_audit import LlmAuditRecorder
+    from api.llm_service import interpret_results
+
+    request_id = request.get("request_id", _make_request_id())
+    question = str(request.get("question") or "")
+    model_name = str(request.get("model") or app_state.get_role_model("role_3"))
+    context_snapshot = request.get("context") if isinstance(request.get("context"), dict) else _build_chat_context_snapshot()
+
+    state = _normalize_chat_state(chat_data)
+    history_for_llm = [
+        {"role": msg.get("role", "user"), "content": str(msg.get("content", ""))}
+        for msg in state["history"]
+        if msg.get("role") in {"user", "assistant"} and msg.get("status") != "pending"
+    ]
+
     t0 = time.perf_counter()
+    recorder = LlmAuditRecorder(
+        run_id=request_id,
+        output_dir=Path("data/results/llm_logs"),
+    )
+
     try:
-        from api.llm_service import interpret_results
-        result = interpret_results(question, context, history=history, model=model_name)
+        result = interpret_results(
+            question,
+            context_snapshot,
+            history=history_for_llm,
+            model=model_name,
+            recorder=recorder,
+        )
         elapsed = time.perf_counter() - t0
-        _record_audit("Role 3", "result_interpreter", model_name,
-                      question, result, elapsed)
-
-        answer_text = result.get("answer", "No answer generated.")
-        hypo = result.get("hypothesis_connection", "")
-        confidence = result.get("confidence_note", "")
-
-        response_parts = [answer_text]
-        if hypo:
-            response_parts.append(f"[{hypo}]")
-        if confidence:
-            response_parts.append(f"Note: {confidence}")
-
-        history.append({"role": "assistant", "content": " ".join(response_parts)})
-
+        role_calls = recorder.get_calls("role_3")
+        raw_response = role_calls[-1].get("raw_response") if role_calls else None
+        _record_audit("Role 3", "result_interpreter", model_name, question, result, elapsed)
+        recorder.write_role_artifact(
+            role="role_3",
+            filename=f"{request_id}_result_interpreter_ui.json",
+            payload={
+                "source": "dash_llm_studio",
+                "question": question,
+                "context": context_snapshot,
+                "result": result,
+            },
+        )
+        return _complete_chat_request(
+            chat_data,
+            request_id,
+            model_name,
+            elapsed,
+            result=result,
+            context_snapshot=context_snapshot,
+            raw_response=raw_response,
+        )
     except Exception as e:
         elapsed = time.perf_counter() - t0
-        _record_audit("Role 3", "result_interpreter", model_name,
-                      question, None, elapsed, str(e))
-        history.append({"role": "assistant", "content": f"Error: {e}"})
+        role_calls = recorder.get_calls("role_3")
+        raw_response = role_calls[-1].get("raw_response") if role_calls else None
+        _record_audit("Role 3", "result_interpreter", model_name, question, None, elapsed, str(e))
+        try:
+            recorder.write_role_artifact(
+                role="role_3",
+                filename=f"{request_id}_result_interpreter_ui.json",
+                payload={
+                    "source": "dash_llm_studio",
+                    "question": question,
+                    "context": context_snapshot,
+                    "error": str(e),
+                },
+            )
+        except Exception:
+            logger.exception("Failed to persist Result Interpreter UI audit artifact.")
+        return _complete_chat_request(
+            chat_data,
+            request_id,
+            model_name,
+            elapsed,
+            context_snapshot=context_snapshot,
+            raw_response=raw_response,
+            error=f"Error: {e}",
+        )
 
-    # Build chat bubble display
-    bubbles = []
-    for msg in history:
-        if msg["role"] == "user":
-            bubbles.append(html.Div([
-                html.Div("You", className="cp-chat__sender"),
-                html.Div(msg["content"]),
-            ], className="cp-chat__message cp-chat__message--user"))
-        else:
-            bubbles.append(html.Div([
-                html.Div("AI Interpreter", className="cp-chat__sender"),
-                html.Div(msg["content"]),
-            ], className="cp-chat__message cp-chat__message--ai"))
 
-    return html.Div(bubbles, className="cp-chat"), history, ""
+# =========================================================================
+# Callback 15: Rehydrate Chat Interpreter views on page remount
+# =========================================================================
+
+@callback(
+    Output("chat-thread", "children"),
+    Output("chat-context-output", "children"),
+    Input("chat-history-store", "data"),
+    Input("llm-studio-page-store", "data"),
+)
+def render_chat_views(chat_data, page_state):
+    """Render the interpreter transcript and the current simulation context."""
+    state = _normalize_chat_state(chat_data)
+    return _build_chat_thread(state), _build_chat_context_panel(state)
+
+
+# =========================================================================
+# Callback 16: Auto-scroll Chat Interpreter transcript
+# =========================================================================
+
+clientside_callback(
+    """
+    function(children, pageState) {
+        const container = document.getElementById("chat-thread");
+        if (!container) {
+            return window.dash_clientside.no_update;
+        }
+
+        window.requestAnimationFrame(() => {
+            container.scrollTo({
+                top: container.scrollHeight,
+                behavior: "smooth",
+            });
+        });
+
+        return Date.now();
+    }
+    """,
+    Output("chat-thread-scroll-store", "data"),
+    Input("chat-thread", "children"),
+    Input("llm-studio-page-store", "data"),
+    prevent_initial_call=True,
+)
 
 
 # =========================================================================
