@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # LLM model for forum dialogues. Follows the same env-var pattern as llm_service.py.
-# Override: LLM_PRIMARY_MODEL=your-model:tag python run.py
+# Override: LLM_PRIMARY_MODEL=your-model:tag python -m dash_app
 FORUM_MODEL = os.environ.get("LLM_PRIMARY_MODEL", "qwen3.5:4b")
 
 # Maximum absolute change to delegation_preference per forum session.

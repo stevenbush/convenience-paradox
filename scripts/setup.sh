@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # setup.sh — One-step setup for The Convenience Paradox
-# Usage: bash setup.sh
-# Requires: conda (Miniconda3 or Anaconda) and Ollama (https://ollama.com)
+# Usage (from repository root): bash scripts/setup.sh
+# Requires: conda (Miniconda3 or Anaconda) and optionally Ollama (https://ollama.com)
 
 set -e
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
 echo "================================================"
 echo " The Convenience Paradox — Environment Setup"
@@ -28,8 +31,14 @@ fi
 echo ""
 echo "[2/4] Verifying Python environment..."
 conda run -n convenience-paradox python -c "
-import mesa; import flask; import pandas; import plotly; import pydantic
+import mesa
+import dash
+import flask
+import pandas
+import plotly
+import pydantic
 print(f'  mesa        {mesa.__version__}')
+print(f'  dash        {dash.__version__}')
 print(f'  Flask       {flask.__version__}')
 print(f'  pandas      {pandas.__version__}')
 print(f'  plotly      {plotly.__version__}')
@@ -64,8 +73,8 @@ echo " Setup complete!"
 echo ""
 echo " To start the dashboard:"
 echo "   conda activate convenience-paradox"
-echo "   python run.py"
-echo "   → Open http://127.0.0.1:5000"
+echo "   python -m dash_app"
+echo "   → Open http://127.0.0.1:8050"
 echo ""
 echo " For LLM features, also run:"
 echo "   ollama serve"

@@ -1,8 +1,10 @@
-"""conftest.py — pytest configuration for The Convenience Paradox project.
+"""Pytest configuration for The Convenience Paradox project.
 
 Registers custom marks so pytest does not emit PytestUnknownMarkWarning and
 keeps live-Ollama tests out of the default offline test run.
 """
+
+from __future__ import annotations
 
 import pytest
 

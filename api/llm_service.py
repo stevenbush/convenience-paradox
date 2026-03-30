@@ -62,14 +62,14 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Primary model: best structured JSON output in the 1B–4B range (see master plan §2).
-# Override at launch: LLM_PRIMARY_MODEL=your-model:tag python run.py
+# Override at launch: LLM_PRIMARY_MODEL=your-model:tag python -m dash_app
 PRIMARY_MODEL = os.environ.get("LLM_PRIMARY_MODEL", "qwen3.5:4b")
 
 # Secondary / lightweight model: faster, used when profile generation is batched.
-# Override at launch: LLM_SECONDARY_MODEL=your-model:tag python run.py
+# Override at launch: LLM_SECONDARY_MODEL=your-model:tag python -m dash_app
 SECONDARY_MODEL = os.environ.get("LLM_SECONDARY_MODEL", "qwen3:1.7b")
 
-# Ollama host. Override: OLLAMA_HOST=http://other-host:11434 python run.py
+# Ollama host. Override: OLLAMA_HOST=http://other-host:11434 python -m dash_app
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 # Maximum tokens to generate. 600 covers all roles; thinking traces use tokens
