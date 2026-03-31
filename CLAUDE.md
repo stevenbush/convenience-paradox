@@ -324,6 +324,7 @@ When Role 3 or Role 4 generates output, include a transparency note: model used,
 
 ## 10. Git Conventions
 
+- **Branches**: `main` is the stable line for releases and public-facing history. Day-to-day development and debugging happen on **`develop`** (long-lived). Merge `develop` into `main` locally when a release-worthy snapshot is ready; **push to GitHub only when the repository owner explicitly requests it** (do not push unprompted).
 - **On-Demand Commits**: Commit only when explicitly requested by the user.
 - **Commit message format**: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 - **Never commit**: `.env` files, API keys, large data files (>1MB), `data/results/` outputs.
