@@ -62,7 +62,7 @@ environments in which they arise.
 
 ### 2.2 Conceptual Causal Loop
 
-![figure_01_causal_loop](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_01_causal_loop.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:920px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_01_causal_loop.svg" alt="figure_01_causal_loop" width="920" loading="lazy" style="display:block; width:100%; max-width:920px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 1. Conceptual causal loop.</figcaption></figure>
 
 *Figure 1* maps the conceptual feedback structure embedded in the model. Two reinforcing loops
 dominate: **R1** (stress-driven delegation spiral) and **R2** (norm-driven convenience lock-in).
@@ -122,7 +122,7 @@ proficiency < skill_requirement.
 
 ### 4.2 Model Lifecycle
 
-![figure_02_model_lifecycle](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_02_model_lifecycle.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:1040px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_02_model_lifecycle.svg" alt="figure_02_model_lifecycle" width="1040" loading="lazy" style="display:block; width:100%; max-width:1040px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 2. White-box model lifecycle.</figcaption></figure>
 
 Each simulation step proceeds through five phases (Figure 2): task generation with backlog merge,
 delegation decision, service-pool matching (greedy, most-available-time-first), backlog return for
@@ -130,7 +130,7 @@ unmatched tasks, and stress/preference update.
 
 ### 4.3 Parameter Profiles
 
-![figure_03_radar_profile](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_03_radar_profile.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:760px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_03_radar_profile.svg" alt="figure_03_radar_profile" width="760" loading="lazy" style="display:block; width:100%; max-width:760px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 3. Type A and Type B parameter profiles.</figcaption></figure>
 
 Figure 3 shows the normalized parameter profiles for the two abstract society types. Type A
 (Autonomy-Oriented) features low delegation preference (0.25), high service cost (0.65), and weak
@@ -176,7 +176,7 @@ source CSVs enabling independent verification, and (3) a three-tier claim safety
 
 ### 6.1 H1: Delegation Increases Total System Labor (Strong Support)
 
-![figure_04_horizon_panel](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_04_horizon_panel.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:1040px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_04_horizon_panel.svg" alt="figure_04_horizon_panel" width="1040" loading="lazy" style="display:block; width:100%; max-width:1040px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 4. Horizon comparison across key metrics.</figcaption></figure>
 
 Figure 4 compares Type A (Autonomy-Oriented) and Type B (Convenience-Oriented) across four simulation
 horizons (120, 200, 300, and 450 steps). Six key metrics reveal persistent structural differences that
@@ -216,7 +216,7 @@ disproportionate provider burden. **Time inequality** shows smaller differences
 0.208), suggesting that the time cost of the convenience
 economy is distributed relatively evenly -- everyone loses time, not just providers.
 
-![figure_05_agent_distributions](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_05_agent_distributions.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:1040px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_05_agent_distributions.svg" alt="figure_05_agent_distributions" width="1040" loading="lazy" style="display:block; width:100%; max-width:1040px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 5. Agent-level outcome distributions.</figcaption></figure>
 
 Figure 5 reveals the agent-level distributions behind these population aggregates. In Type A, available
 time shows a wide distribution centered around 3.7 hours, reflecting individual
@@ -235,7 +235,7 @@ accounting framework, not a universal law of delegation economics.
 
 ### 6.2 H2: Threshold Triggers Involution (Strong Support)
 
-![figure_06_phase_atlas](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_06_phase_atlas.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:920px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_06_phase_atlas.svg" alt="figure_06_phase_atlas" width="920" loading="lazy" style="display:block; width:100%; max-width:920px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 6. Delegation-task load phase atlas.</figcaption></figure>
 
 Figure 6 presents the delegation--task load phase atlas, mapping system-level backlog accumulation
 across the two most important control parameters. The color gradient (log-scaled) reveals three
@@ -256,7 +256,7 @@ confined to the **task load 3.0--3.25 range** across all delegation levels teste
 this threshold across varying delegation preferences suggests that the bottleneck is system-level
 provider capacity (total available service hours), not individual agent decisions.
 
-![figure_07_threshold_detail](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_07_threshold_detail.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:1040px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_07_threshold_detail.svg" alt="figure_07_threshold_detail" width="1040" loading="lazy" style="display:block; width:100%; max-width:1040px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 7. Threshold transition detail.</figcaption></figure>
 
 Figure 7 isolates the threshold mechanics through three complementary panels:
 
@@ -274,7 +274,7 @@ tight convergence above the threshold. Once backlog begins accumulating, the sys
 largely determined by task load alone, with delegation level becoming a secondary factor. The shaded
 band between 3.0 and 3.25 marks where the model transitions from one behavioral regime to another.
 
-![figure_08_story_timeseries](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_08_story_timeseries.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:1040px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_08_story_timeseries.svg" alt="figure_08_story_timeseries" width="1040" loading="lazy" style="display:block; width:100%; max-width:1040px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 8. Four story-case system trajectories.</figcaption></figure>
 
 Figure 8 illustrates these regimes through four story cases, tracking six metrics over time:
 
@@ -307,7 +307,7 @@ are properties of this particular model.
 
 ### 6.3 H3: Autonomy Preserves Well-Being (Partial Support)
 
-![figure_09_labor_decomposition](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_09_labor_decomposition.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:920px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_09_labor_decomposition.svg" alt="figure_09_labor_decomposition" width="920" loading="lazy" style="display:block; width:100%; max-width:920px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 9. Labor decomposition by case.</figcaption></figure>
 
 Figure 9 decomposes the labor budget across the four story cases into three components: self-labor
 (tasks completed by the agent who generated them), service labor (tasks completed by providers on
@@ -334,7 +334,7 @@ delegation is a *net labor creator*, not a labor saver. Each delegated task gene
 system work-hours than the same task completed self-sufficiently -- because coordination overhead (15%)
 and provider time penalties (11%) add to the baseline task cost.
 
-![figure_10_available_time_density](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_10_available_time_density.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:760px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_10_available_time_density.svg" alt="figure_10_available_time_density" width="760" loading="lazy" style="display:block; width:100%; max-width:760px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 10. Available-time distribution.</figcaption></figure>
 
 Figure 10 compares the distribution of available time at the final simulation step across 100 agents.
 Type A agents cluster around 3.7 hours with a spread reflecting individual
@@ -357,7 +357,7 @@ measure (time, stress) and what we would need to measure for a complete well-bei
 
 ### 6.4 H4: Mixed Systems and Norm Lock-in (Partial, Important Negative Result)
 
-![figure_11_mixed_heatmap](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_11_mixed_heatmap.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:760px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_11_mixed_heatmap.svg" alt="figure_11_mixed_heatmap" width="760" loading="lazy" style="display:block; width:100%; max-width:760px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 11. Mixed-system stability heatmap.</figcaption></figure>
 
 Figure 11 maps the standard deviation of final delegation rates across the mixed-system parameter
 space, testing whether moderate-delegation populations drift toward extremes under varying conformity
@@ -370,7 +370,7 @@ remains remarkably stable. Higher conformity pressure does not produce measurabl
 in final outcomes. The delegation rate standard deviation varies by less than 0.002 across the entire
 conformity range -- cell annotations in the heatmap show near-uniform values throughout the grid.
 
-![figure_12_mixed_scatter](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_12_mixed_scatter.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:760px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_12_mixed_scatter.svg" alt="figure_12_mixed_scatter" width="760" loading="lazy" style="display:block; width:100%; max-width:760px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 12. Per-seed mixed-system outcomes.</figcaption></figure>
 
 Figure 12 reinforces this finding from the per-seed perspective. Each point represents one simulation
 run's final delegation rate plotted against its initial delegation preference mean, with color
@@ -399,7 +399,7 @@ to measure whether additional mechanisms produce qualitatively different behavio
 
 ### 6.5 Service Cost Sensitivity (Cross-Cutting)
 
-![figure_13_cost_sensitivity](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_13_cost_sensitivity.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:1040px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_13_cost_sensitivity.svg" alt="figure_13_cost_sensitivity" width="1040" loading="lazy" style="display:block; width:100%; max-width:1040px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 13. Service-cost sensitivity.</figcaption></figure>
 
 Figure 13 examines the role of service cost as a contextual moderator, probing whether cheaper
 services uniformly benefit agents or whether their effect depends on system state. The left panel
@@ -557,7 +557,7 @@ claim.
 
 ### A.1 Parameter Sensitivity
 
-![figure_14_param_sensitivity](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_14_param_sensitivity.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:1040px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_14_param_sensitivity.svg" alt="figure_14_param_sensitivity" width="1040" loading="lazy" style="display:block; width:100%; max-width:1040px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 14. Parameter sensitivity panel.</figcaption></figure>
 
 Figure 14 presents small-multiples showing how three key outcome metrics -- average stress, total
 labor hours, and backlog tasks -- respond to task load at five different delegation levels (0.05,
@@ -580,7 +580,7 @@ qualitatively change the regime structure.
 
 ### A.2 Campaign Coverage
 
-![figure_15_campaign_coverage](<../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_15_campaign_coverage.png>)
+<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:920px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="../../data/results/campaigns/20260401_235956_research_v2_15k_parallel_20260401/report_assets/formal_report_v2/figures/figure_15_campaign_coverage.svg" alt="figure_15_campaign_coverage" width="920" loading="lazy" style="display:block; width:100%; max-width:920px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 15. Campaign coverage map.</figcaption></figure>
 
 Figure 15 maps the parameter-space coverage of all 14,656 runs across four packages. Package B
 (Convenience Transfer) provides the densest coverage of the delegation--task load plane, with
@@ -596,5 +596,3 @@ statistical conclusions.
 *This model explores abstract social dynamics using stylized Type A / Type B configurations. It is
 not intended to characterize or evaluate any specific society, culture, or nation.*
 
-*Report generated by `formal_campaign_report_v2.py` from campaign data. All figures have
-corresponding source CSV files for independent verification.*

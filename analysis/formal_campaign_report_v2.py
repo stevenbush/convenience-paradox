@@ -38,6 +38,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.patheffects as pe
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 import numpy as np
@@ -71,6 +72,78 @@ COLORS = {
     "fill_a": "#D1E5F0",
     "fill_b": "#FDDBC7",
     "bg": "#FAFAFA",
+}
+
+STYLE = {
+    "font_family": "DejaVu Serif",
+    "base_size": 10.5,
+    "figure_title_size": 13,
+    "panel_title_size": 11,
+    "axis_label_size": 10.5,
+    "legend_size": 9,
+    "tick_size": 9,
+    "annotation_size": 8.5,
+    "legend_edge": "#D9D9D9",
+    "note_bg": (1.0, 1.0, 1.0, 0.82),
+}
+
+FIGURE_DISPLAY_WIDTHS = {
+    "wide": 1040,
+    "standard": 920,
+    "compact": 760,
+}
+
+WIDE_FIGURES = {
+    "figure_02_model_lifecycle",
+    "figure_04_horizon_panel",
+    "figure_05_agent_distributions",
+    "figure_07_threshold_detail",
+    "figure_08_story_timeseries",
+    "figure_13_cost_sensitivity",
+    "figure_14_param_sensitivity",
+}
+
+COMPACT_FIGURES = {
+    "figure_03_radar_profile",
+    "figure_10_available_time_density",
+    "figure_11_mixed_heatmap",
+    "figure_12_mixed_scatter",
+}
+
+FIGURE_CAPTIONS_EN = {
+    "figure_01_causal_loop": "Figure 1. Conceptual causal loop.",
+    "figure_02_model_lifecycle": "Figure 2. White-box model lifecycle.",
+    "figure_03_radar_profile": "Figure 3. Type A and Type B parameter profiles.",
+    "figure_04_horizon_panel": "Figure 4. Horizon comparison across key metrics.",
+    "figure_05_agent_distributions": "Figure 5. Agent-level outcome distributions.",
+    "figure_06_phase_atlas": "Figure 6. Delegation-task load phase atlas.",
+    "figure_07_threshold_detail": "Figure 7. Threshold transition detail.",
+    "figure_08_story_timeseries": "Figure 8. Four story-case system trajectories.",
+    "figure_09_labor_decomposition": "Figure 9. Labor decomposition by case.",
+    "figure_10_available_time_density": "Figure 10. Available-time distribution.",
+    "figure_11_mixed_heatmap": "Figure 11. Mixed-system stability heatmap.",
+    "figure_12_mixed_scatter": "Figure 12. Per-seed mixed-system outcomes.",
+    "figure_13_cost_sensitivity": "Figure 13. Service-cost sensitivity.",
+    "figure_14_param_sensitivity": "Figure 14. Parameter sensitivity panel.",
+    "figure_15_campaign_coverage": "Figure 15. Campaign coverage map.",
+}
+
+FIGURE_CAPTIONS_ZH = {
+    "figure_01_causal_loop": "图 1. 概念因果环路。",
+    "figure_02_model_lifecycle": "图 2. 白盒模型生命周期。",
+    "figure_03_radar_profile": "图 3. A 类与 B 类参数画像。",
+    "figure_04_horizon_panel": "图 4. 关键指标的时长对比。",
+    "figure_05_agent_distributions": "图 5. 代理层结果分布。",
+    "figure_06_phase_atlas": "图 6. 委托-任务负荷相位图谱。",
+    "figure_07_threshold_detail": "图 7. 阈值转变细节。",
+    "figure_08_story_timeseries": "图 8. 四类故事案例动态轨迹。",
+    "figure_09_labor_decomposition": "图 9. 各案例劳动结构分解。",
+    "figure_10_available_time_density": "图 10. 可用时间分布。",
+    "figure_11_mixed_heatmap": "图 11. 混合系统稳定性热力图。",
+    "figure_12_mixed_scatter": "图 12. 混合系统逐种子结果。",
+    "figure_13_cost_sensitivity": "图 13. 服务成本敏感性。",
+    "figure_14_param_sensitivity": "图 14. 参数敏感性面板。",
+    "figure_15_campaign_coverage": "图 15. 实验覆盖范围图。",
 }
 
 STORY_ORDER = [
@@ -117,22 +190,34 @@ def _apply_style() -> None:
     explicit top margin and a uniformly-positioned suptitle.
     """
     plt.rcParams.update({
-        "font.family": "serif",
-        "font.size": 10,
-        "axes.titlesize": 10.5,
+        "font.family": STYLE["font_family"],
+        "font.size": STYLE["base_size"],
+        "axes.titlesize": STYLE["panel_title_size"],
         "axes.titleweight": "bold",
-        "axes.labelsize": 10,
+        "axes.labelsize": STYLE["axis_label_size"],
+        "axes.labelcolor": "#2E2E2E",
+        "axes.titlepad": 10,
+        "axes.facecolor": COLORS["bg"],
+        "axes.edgecolor": "#444444",
+        "axes.linewidth": 0.9,
         "axes.spines.top": False,
         "axes.spines.right": False,
         "axes.grid": True,
         "grid.color": COLORS["grid"],
         "grid.linewidth": 0.6,
-        "legend.framealpha": 0.9,
-        "legend.fontsize": 9,
-        "xtick.labelsize": 9,
-        "ytick.labelsize": 9,
+        "grid.alpha": 0.75,
+        "legend.frameon": True,
+        "legend.framealpha": 0.95,
+        "legend.fontsize": STYLE["legend_size"],
+        "legend.edgecolor": STYLE["legend_edge"],
+        "xtick.labelsize": STYLE["tick_size"],
+        "ytick.labelsize": STYLE["tick_size"],
+        "xtick.color": "#333333",
+        "ytick.color": "#333333",
+        "figure.facecolor": "white",
         "figure.dpi": 100,
         "savefig.dpi": 250,
+        "image.interpolation": "nearest",
     })
 
 
@@ -146,10 +231,72 @@ def _finalize_fig(fig: plt.Figure, title: str, *, top: float = 0.91,
     """
     if use_tight:
         try:
-            fig.tight_layout(rect=[0, 0.02, 1, top])
+            fig.tight_layout(rect=[0.025, 0.035, 0.985, top])
         except Exception:
             pass
-    fig.suptitle(title, fontsize=12, fontweight="bold", y=top + 0.05)
+    fig.patch.set_facecolor("white")
+    fig.suptitle(
+        title,
+        fontsize=STYLE["figure_title_size"],
+        fontweight="bold",
+        y=top + 0.042,
+    )
+
+
+def _set_panel_title(ax: plt.Axes, title: str) -> None:
+    """Apply a consistent panel-title style across multi-panel figures."""
+    ax.set_title(title, fontsize=STYLE["panel_title_size"], fontweight="bold", pad=10)
+
+
+def _style_legend(ax: plt.Axes, **kwargs) -> None:
+    """Render legends with a consistent framed style."""
+    fontsize = kwargs.pop("fontsize", STYLE["legend_size"])
+    legend = ax.legend(frameon=True, fontsize=fontsize, **kwargs)
+    if legend is None:
+        return
+    frame = legend.get_frame()
+    frame.set_facecolor("white")
+    frame.set_edgecolor(STYLE["legend_edge"])
+    frame.set_linewidth(0.8)
+
+
+def _style_colorbar(cbar, label: str) -> None:
+    """Apply consistent font sizing to colorbars."""
+    cbar.set_label(label, fontsize=STYLE["axis_label_size"])
+    cbar.ax.tick_params(labelsize=STYLE["tick_size"])
+
+
+def _outlined(artist, *, foreground: str = "white", linewidth: float = 2.4) -> None:
+    """Add a halo so lines and text remain readable over heatmaps."""
+    artist.set_path_effects([pe.Stroke(linewidth=linewidth, foreground=foreground), pe.Normal()])
+
+
+def _annotate_note(ax: plt.Axes, text: str, *, x: float = 0.02, y: float = 0.02,
+                   ha: str = "left", color: str = "#2E2E2E") -> None:
+    """Place a boxed note inside an axis with consistent styling."""
+    ax.text(
+        x,
+        y,
+        text,
+        transform=ax.transAxes,
+        ha=ha,
+        va="bottom",
+        fontsize=STYLE["annotation_size"],
+        color=color,
+        style="italic",
+        bbox={"boxstyle": "round,pad=0.25", "fc": STYLE["note_bg"], "ec": "none"},
+    )
+
+
+def _heatmap_extent(values: list[float] | np.ndarray) -> list[float]:
+    """Return padded imshow extents so edge cells and annotations are not clipped."""
+    vals = np.array(sorted(values), dtype=float)
+    if len(vals) == 1:
+        delta = 0.5
+    else:
+        deltas = np.diff(vals)
+        delta = float(np.min(deltas)) / 2
+    return [float(vals[0] - delta), float(vals[-1] + delta)]
 
 
 # ---------------------------------------------------------------------------
@@ -209,9 +356,44 @@ def _fmt_pct(v: float, d: int = 1) -> str:
     return f"{v:.{d}f}%"
 
 
-def _md_img(from_path: Path, target: Path, alt: str) -> str:
-    rel = os.path.relpath(target.resolve(), start=from_path.resolve().parent).replace(os.sep, "/")
-    return f"![{alt}](<{rel}>)"
+def _preferred_report_asset(target: Path) -> Path:
+    """Prefer SVG in reports for sharper text rendering when available."""
+    svg_target = target.with_suffix(".svg")
+    return svg_target if svg_target.exists() else target
+
+
+def _figure_display_width(slug: str) -> int:
+    """Choose a consistent display width tier by figure layout type."""
+    if slug in WIDE_FIGURES:
+        return FIGURE_DISPLAY_WIDTHS["wide"]
+    if slug in COMPACT_FIGURES:
+        return FIGURE_DISPLAY_WIDTHS["compact"]
+    return FIGURE_DISPLAY_WIDTHS["standard"]
+
+
+def _figure_caption(slug: str, language: str) -> str:
+    """Return a localized short caption for the rendered report figure card."""
+    if language == "zh":
+        return FIGURE_CAPTIONS_ZH.get(slug, slug)
+    return FIGURE_CAPTIONS_EN.get(slug, slug)
+
+
+def _md_img(from_path: Path, target: Path, alt: str, *, language: str = "en") -> str:
+    render_target = _preferred_report_asset(target)
+    rel = os.path.relpath(render_target.resolve(), start=from_path.resolve().parent).replace(os.sep, "/")
+    width = _figure_display_width(alt)
+    caption = _figure_caption(alt, language)
+    return (
+        f'<figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:{width}px;">'
+        f'<div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; '
+        f'padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);">'
+        f'<img src="{rel}" alt="{alt}" width="{width}" loading="lazy" '
+        f'style="display:block; width:100%; max-width:{width}px; height:auto; margin:0 auto;" />'
+        f"</div>"
+        f'<figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; '
+        f'line-height:1.45; color:#6b7280;">{caption}</figcaption>'
+        f"</figure>"
+    )
 
 
 def _strip_indent(text: str) -> str:
@@ -658,11 +840,31 @@ def _fig01_causal_loop(fdir: Path, sdir: Path, manifest: list) -> tuple[Path, Pa
         ax.text(n["x"], n["y"], n["node"], ha="center", va="center", fontsize=10.5,
                 bbox={"boxstyle": "round,pad=0.5", "fc": "white", "ec": "#333333", "lw": 1.3})
 
-    # Loop labels
-    ax.text(0.50, 0.72, "R1", ha="center", va="center", fontsize=14, fontweight="bold",
-            color=COLORS["type_b"], alpha=0.5)
-    ax.text(0.33, 0.52, "R2", ha="center", va="center", fontsize=14, fontweight="bold",
-            color=COLORS["type_b"], alpha=0.5)
+    # Loop labels: place them in open interior space so they do not sit on top of links.
+    ax.text(
+        0.535,
+        0.705,
+        "R1",
+        ha="center",
+        va="center",
+        fontsize=14,
+        fontweight="bold",
+        color=COLORS["type_b"],
+        alpha=0.55,
+        bbox={"boxstyle": "round,pad=0.14", "fc": (1, 1, 1, 0.78), "ec": "none"},
+    )
+    ax.text(
+        0.295,
+        0.475,
+        "R2",
+        ha="center",
+        va="center",
+        fontsize=14,
+        fontweight="bold",
+        color=COLORS["type_b"],
+        alpha=0.55,
+        bbox={"boxstyle": "round,pad=0.14", "fc": (1, 1, 1, 0.78), "ec": "none"},
+    )
 
     _finalize_fig(fig, "Figure 1. Conceptual Causal Loop: Convenience, Backlog, and Norm Reinforcement",
                   use_tight=False, top=0.93)
@@ -754,7 +956,7 @@ def _fig03_radar_profile(fdir: Path, sdir: Path, manifest: list) -> tuple[Path, 
     ax.set_ylim(0, 1)
     ax.set_yticks([0.25, 0.5, 0.75, 1.0])
     ax.set_yticklabels(["0.25", "0.50", "0.75", "1.00"], fontsize=8, color=COLORS["neutral"])
-    ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.1))
+    _style_legend(ax, loc="upper right", bbox_to_anchor=(1.25, 1.1))
     _finalize_fig(fig, "Figure 3. Parameter Profiles: Type A vs Type B (Normalized)",
                   use_tight=False, top=0.92)
 
@@ -787,9 +989,9 @@ def _fig04_horizon_panel(baseline: pd.DataFrame, fdir: Path, sdir: Path,
             sub = baseline[baseline["society"] == soc]
             ax.plot(sub["steps"], sub[col], color=color, lw=2.2, ls=ls, marker=marker,
                     markersize=6, label=soc)
-        ax.set_title(title)
+        _set_panel_title(ax, title)
         ax.set_ylabel(ylabel)
-        ax.legend(fontsize=8)
+        _style_legend(ax, loc="best")
     for ax in axes[-1]:
         ax.set_xlabel("Simulation Horizon (steps)")
     _finalize_fig(fig, "Figure 4. Type A and Type B Remain Structurally Different Across Longer Horizons")
@@ -853,7 +1055,7 @@ def _fig05_agent_distributions(snapshots: dict[str, pd.DataFrame], fdir: Path,
         ax.set_ylabel(ylabel)
         ax.set_xticks([0.8, 1.2])
         ax.set_xticklabels(["Type A", "Type B"])
-        ax.set_title(ylabel.split("(")[0].strip())
+        _set_panel_title(ax, ylabel.split("(")[0].strip())
 
     _finalize_fig(fig, "Figure 5. Agent-Level Distributions at Final Step: Type A vs Type B")
 
@@ -878,31 +1080,68 @@ def _fig06_phase_atlas(atlas: pd.DataFrame, onset: pd.DataFrame,
     Z = np.log10(pivot.values + 1)
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    im = ax.imshow(Z, origin="lower", aspect="auto", cmap="YlOrRd",
-                    extent=[deleg_vals[0], deleg_vals[-1], task_vals[0], task_vals[-1]])
-    cb = fig.colorbar(im, ax=ax, label="log\u2081\u2080(1 + backlog tasks)", shrink=0.85)
+    x_extent = _heatmap_extent(deleg_vals)
+    y_extent = _heatmap_extent(task_vals)
+
+    ax.grid(False)
+    im = ax.imshow(
+        Z,
+        origin="lower",
+        aspect="auto",
+        cmap="YlOrRd",
+        extent=[x_extent[0], x_extent[1], y_extent[0], y_extent[1]],
+    )
+    cb = fig.colorbar(im, ax=ax, shrink=0.85)
+    _style_colorbar(cb, "log\u2081\u2080(1 + backlog tasks)")
 
     # Contour lines
     X, Y = np.meshgrid(deleg_vals, task_vals)
     try:
-        cs = ax.contour(X, Y, Z, levels=[0.01, 0.5, 1.0, 2.0, 3.0],
-                         colors="white", linewidths=1.2, linestyles="--")
-        ax.clabel(cs, inline=True, fontsize=8, fmt="%.1f")
+        cs = ax.contour(
+            X,
+            Y,
+            Z,
+            levels=[0.01, 0.5, 1.0, 2.0, 3.0],
+            colors="#2F3E46",
+            linewidths=1.35,
+            linestyles="--",
+        )
+        for collection in cs.collections:
+            _outlined(collection, foreground="white", linewidth=2.8)
+        labels = ax.clabel(cs, inline=True, fontsize=STYLE["annotation_size"], fmt="%.1f")
+        for label in labels:
+            label.set_color("#24323A")
+            _outlined(label, foreground="white", linewidth=2.5)
     except Exception:
         pass
 
     # Onset line
     if not onset.empty:
-        ax.plot(onset["delegation_preference_mean"], onset["first_backlog_task_load"],
-                "w-o", lw=2.5, markersize=5, label="First visible backlog", zorder=5)
-        ax.legend(loc="upper left", fontsize=9)
+        line = ax.plot(
+            onset["delegation_preference_mean"],
+            onset["first_backlog_task_load"],
+            "o-",
+            color="#244C5A",
+            lw=2.6,
+            markersize=5.5,
+            markerfacecolor="white",
+            markeredgewidth=1.2,
+            label="First visible backlog",
+            zorder=5,
+        )[0]
+        _outlined(line, foreground="white", linewidth=4.0)
+        _style_legend(ax, loc="upper left")
 
     ax.set_xlabel("Delegation Preference Mean")
     ax.set_ylabel("Task Load Mean (tasks/step)")
+    ax.set_xticks(deleg_vals)
+    ax.set_yticks(task_vals)
     _finalize_fig(fig, "Figure 6. Delegation\u2013Task Load Phase Atlas: Backlog Emergence",
                   top=0.93)
-    ax.text(0.02, 0.02, "Safe zone (bottom-left) \u2192 Transition band \u2192 Overloaded regime (top-right)",
-            transform=ax.transAxes, fontsize=9, color="white", style="italic")
+    _annotate_note(
+        ax,
+        "Safe zone (bottom-left) \u2192 Transition band \u2192 Overloaded regime (top-right)",
+    )
 
     png = fdir / "figure_06_phase_atlas.png"
     svg = fdir / "figure_06_phase_atlas.svg"
@@ -926,7 +1165,7 @@ def _fig07_threshold_detail(onset: pd.DataFrame, ref_sum: pd.DataFrame,
             "o-", color=COLORS["type_b"], lw=2, markersize=7)
     ax.set_xlabel("Delegation Preference Mean")
     ax.set_ylabel("Stress at Backlog Onset")
-    ax.set_title("(a) Stress at Threshold")
+    _set_panel_title(ax, "(a) Stress at Threshold")
 
     # Panel b: Task load at onset vs delegation
     ax = axes[1]
@@ -934,9 +1173,9 @@ def _fig07_threshold_detail(onset: pd.DataFrame, ref_sum: pd.DataFrame,
             "s-", color=COLORS["threshold"], lw=2, markersize=7)
     ax.set_xlabel("Delegation Preference Mean")
     ax.set_ylabel("Task Load at First Backlog")
-    ax.set_title("(b) Threshold Task Load")
+    _set_panel_title(ax, "(b) Threshold Task Load")
     ax.axhspan(3.0, 3.25, alpha=0.2, color=COLORS["threshold"], label="3.0\u20133.25 band")
-    ax.legend(fontsize=8)
+    _style_legend(ax, loc="best")
 
     # Panel c: Refinement band stress range
     ax = axes[2]
@@ -948,9 +1187,9 @@ def _fig07_threshold_detail(onset: pd.DataFrame, ref_sum: pd.DataFrame,
             "-", color=COLORS["type_b"], lw=1.5, label="Stress max")
     ax.set_xlabel("Task Load Mean")
     ax.set_ylabel("Tail Average Stress")
-    ax.set_title("(c) Refined Transition Band")
+    _set_panel_title(ax, "(c) Refined Transition Band")
     ax.axvspan(3.0, 3.25, alpha=0.15, color=COLORS["threshold"])
-    ax.legend(fontsize=8)
+    _style_legend(ax, loc="best")
 
     _finalize_fig(fig, "Figure 7. Threshold Transition Detail: The 3.0\u20133.25 Critical Band")
 
@@ -986,11 +1225,11 @@ def _fig08_story_timeseries(ts: pd.DataFrame, fdir: Path, sdir: Path,
                 continue
             ax.plot(sub["Step"], sub[col], color=STORY_COLORS[sid], lw=1.5,
                     label=STORY_LABELS[sid], alpha=0.85)
-        ax.set_title(title)
+        _set_panel_title(ax, title)
         ax.set_ylabel(ylabel)
         if use_log:
             ax.set_yscale("symlog", linthresh=1)
-        ax.legend(fontsize=7, loc="best")
+        _style_legend(ax, loc="best", fontsize=8)
     for ax in axes[-1]:
         ax.set_xlabel("Simulation Step")
 
@@ -1024,15 +1263,15 @@ def _fig09_labor_decomposition(key_table: pd.DataFrame, fdir: Path, sdir: Path,
     ax1.set_ylabel("Tail Labor Hours")
     ax1.set_xticks(x)
     ax1.set_xticklabels(cases, rotation=15, ha="right")
-    ax1.legend(loc="upper left", fontsize=9)
+    _style_legend(ax1, loc="upper left")
 
     # Delta line on secondary axis
     ax2 = ax1.twinx()
     delta = key_table["tail_delegation_labor_delta"].astype(float).values
     ax2.plot(x, delta, "D-", color=COLORS["threshold"], lw=2.5, markersize=8, label="Labor Delta")
-    ax2.set_ylabel("Delegation Labor Delta", fontsize=11, color=COLORS["threshold"])
+    ax2.set_ylabel("Delegation Labor Delta", color=COLORS["threshold"])
     ax2.tick_params(axis="y", labelcolor=COLORS["threshold"])
-    ax2.legend(loc="upper right", fontsize=9)
+    _style_legend(ax2, loc="upper right")
 
     _finalize_fig(fig, "Figure 9. Labor Composition: Convenience Reshapes Before It Overloads",
                   top=0.93)
@@ -1060,7 +1299,7 @@ def _fig10_available_time_density(snapshots: dict[str, pd.DataFrame], fdir: Path
                 label="Type B (Convenience)", density=True, edgecolor="white")
     ax.set_xlabel("Available Time (hours)")
     ax.set_ylabel("Density")
-    ax.legend(fontsize=10)
+    _style_legend(ax, loc="best")
     _finalize_fig(fig, "Figure 10. Available Time Distribution at Final Step",
                   top=0.93)
 
@@ -1088,20 +1327,41 @@ def _fig11_mixed_heatmap(hm: pd.DataFrame, fdir: Path, sdir: Path,
                             columns="social_conformity_pressure",
                             values="final_avg_delegation_rate_std", aggfunc="mean")
     fig, ax = plt.subplots(figsize=(9, 7))
-    im = ax.imshow(pivot.values, origin="lower", aspect="auto", cmap="Blues",
-                    extent=[pivot.columns.min(), pivot.columns.max(),
-                            pivot.index.min(), pivot.index.max()])
-    cb = fig.colorbar(im, ax=ax, label="Final Delegation Rate Std Dev", shrink=0.85)
+    x_vals = pivot.columns.to_list()
+    y_vals = pivot.index.to_list()
+    x_extent = _heatmap_extent(x_vals)
+    y_extent = _heatmap_extent(y_vals)
+
+    ax.grid(False)
+    im = ax.imshow(
+        pivot.values,
+        origin="lower",
+        aspect="auto",
+        cmap="Blues",
+        extent=[x_extent[0], x_extent[1], y_extent[0], y_extent[1]],
+    )
+    cb = fig.colorbar(im, ax=ax, shrink=0.85)
+    _style_colorbar(cb, "Final Delegation Rate Std Dev")
 
     # Annotate cells
     for i, deleg in enumerate(pivot.index):
         for j, conf in enumerate(pivot.columns):
             val = pivot.values[i, j]
-            ax.text(conf, deleg, f"{val:.4f}", ha="center", va="center",
-                    fontsize=7.5, color="white" if val > pivot.values.mean() else "black")
+            ax.text(
+                conf,
+                deleg,
+                f"{val:.4f}",
+                ha="center",
+                va="center",
+                fontsize=STYLE["annotation_size"],
+                color="#1F2937",
+                bbox={"boxstyle": "round,pad=0.16", "fc": (1, 1, 1, 0.72), "ec": "none"},
+            )
 
     ax.set_xlabel("Social Conformity Pressure")
     ax.set_ylabel("Initial Delegation Preference Mean")
+    ax.set_xticks(x_vals)
+    ax.set_yticks(y_vals)
     _finalize_fig(fig, "Figure 11. Mixed-System Stability: Dispersion Remains Modest",
                   top=0.93)
 
@@ -1122,12 +1382,13 @@ def _fig12_mixed_scatter(pt: pd.DataFrame, fdir: Path, sdir: Path,
     sc = ax.scatter(pt["delegation_preference_mean"], pt["final_avg_delegation_rate"],
                      c=pt["social_conformity_pressure"], cmap="coolwarm",
                      s=30, alpha=0.7, edgecolors="white", linewidths=0.3)
-    cb = fig.colorbar(sc, ax=ax, label="Conformity Pressure", shrink=0.85)
+    cb = fig.colorbar(sc, ax=ax, shrink=0.85)
+    _style_colorbar(cb, "Conformity Pressure")
     lims = [0.3, 0.7]
     ax.plot(lims, lims, "--", color=COLORS["neutral"], lw=1.5, label="Identity line")
     ax.set_xlabel("Initial Delegation Preference Mean")
     ax.set_ylabel("Final Delegation Rate (per seed)")
-    ax.legend(fontsize=9)
+    _style_legend(ax, loc="best")
     _finalize_fig(fig, "Figure 12. Per-Seed Delegation Outcomes Stay Close to Initial Values",
                   top=0.93)
 
@@ -1162,8 +1423,8 @@ def _fig13_cost_sensitivity(ctx: pd.DataFrame, flip: pd.DataFrame,
     ax.set_xticks(x)
     ax.set_xticklabels(contexts, rotation=20, ha="right")
     ax.set_ylabel("Tail Average Stress")
-    ax.set_title("(a) Stress: Low vs High Service Cost")
-    ax.legend(fontsize=9)
+    _set_panel_title(ax, "(a) Stress: Low vs High Service Cost")
+    _style_legend(ax, loc="best")
 
     # Right: Flip point
     ax = axes[1]
@@ -1174,7 +1435,7 @@ def _fig13_cost_sensitivity(ctx: pd.DataFrame, flip: pd.DataFrame,
                          alpha=0.1, color=COLORS["threshold"])
     ax.set_xlabel("Delegation Preference Mean")
     ax.set_ylabel("Task Load Where Low Cost Flips to Higher Stress")
-    ax.set_title("(b) Cost-Amplification Threshold")
+    _set_panel_title(ax, "(b) Cost-Amplification Threshold")
 
     _finalize_fig(fig, "Figure 13. Service Cost Is Conditional: Relief at Low Load, Amplification Near Threshold")
 
@@ -1207,11 +1468,11 @@ def _fig14_param_sensitivity(atlas: pd.DataFrame, fdir: Path, sdir: Path,
             color = cmap(i / (len(deleg_levels) - 1))
             ax.plot(sub["tasks_per_step_mean"], sub[col], "o-", color=color,
                     lw=1.8, markersize=4, label=f"Deleg={dl:.2f}")
-        ax.set_title(title)
+        _set_panel_title(ax, title)
         ax.set_xlabel("Task Load Mean")
         if "log" in title.lower():
             ax.set_yscale("symlog", linthresh=1)
-        ax.legend(fontsize=7, loc="best")
+        _style_legend(ax, loc="best", fontsize=8)
 
     _finalize_fig(fig, "Figure 14. Parameter Sensitivity: How Task Load and Delegation Jointly Shape Outcomes")
 
@@ -1246,7 +1507,7 @@ def _fig15_campaign_coverage(combo: pd.DataFrame, fdir: Path, sdir: Path,
                     linewidths=0.3)
     ax.set_xlabel("Delegation Preference Mean")
     ax.set_ylabel("Task Load Mean")
-    ax.legend(fontsize=9, title="Package")
+    _style_legend(ax, loc="best", title="Package")
     _finalize_fig(fig, "Figure 15. Campaign Coverage: 14,656 Runs Across the Parameter Space",
                   top=0.93)
 
@@ -1265,7 +1526,7 @@ def _fig15_campaign_coverage(combo: pd.DataFrame, fdir: Path, sdir: Path,
 def _render_english(report_path: Path, fig_paths: dict[str, Path],
                      tables: dict[str, pd.DataFrame], stats: dict) -> str:
     """Generate the full English Markdown research report."""
-    I = lambda slug: _md_img(report_path, fig_paths[slug], slug)
+    I = lambda slug: _md_img(report_path, fig_paths[slug], slug, language="en")
 
     report = textwrap.dedent(f"""\
     # The Convenience Paradox: An Agent-Based Exploration of Service Delegation, Labor Transfer, and Social Involution
@@ -1863,7 +2124,7 @@ def _render_english(report_path: Path, fig_paths: dict[str, Path],
 def _render_chinese(report_path: Path, fig_paths: dict[str, Path],
                      tables: dict[str, pd.DataFrame], stats: dict) -> str:
     """Generate the full Chinese Markdown research report."""
-    I = lambda slug: _md_img(report_path, fig_paths[slug], slug)
+    I = lambda slug: _md_img(report_path, fig_paths[slug], slug, language="zh")
 
     report = textwrap.dedent(f"""\
     # 便利悖论：基于代理的服务委托、劳动转移与社会内卷探索性研究
