@@ -4,6 +4,66 @@ This file defines the operating rules, conventions, and context for any AI agent
 
 ---
 
+## Syncing `develop` → `main` (paths to omit on `main`)
+
+**Policy.** The `main` branch is the public release line. The `develop` branch may keep internal or agent-facing material that must **not** reappear on `main` after a merge. Git does not filter paths during `git merge` automatically—whoever performs the sync must **remove the paths below from `main`** (or avoid bringing them in) after integrating `develop`.
+
+**Recorded baseline (for diff provenance).** Compared `develop` at `ae49729` (*chore: remove obsolete formal report artifacts and tests*) with `main` at `c158fcd` (*chore: pre-release documentation cleanup on main*). The following paths exist on `develop` but were intentionally dropped from `main`; treat them as **develop-only** when syncing to `main`:
+
+| Path |
+|------|
+| `AGENTS.md` |
+| `CLAUDE.md` |
+| `docs/execution_log.md` |
+| `docs/Interpretation_of_Interface_Metrics.md` |
+| `docs/Social_Phenomenon_Modeling_and_Design_CN.md` |
+| `docs/ConvenienceParadoxResearchModel_design.en.md` |
+| `docs/ConvenienceParadoxResearchModel_design.zh.md` |
+| `docs/plans/00_master_plan.md` |
+| `docs/plans/01_phase1_foundation.md` |
+| `docs/plans/02_phase2_simulation.md` |
+| `docs/plans/03_phase3_web_interface.md` |
+| `docs/plans/04_phase4_llm_integration.md` |
+| `docs/plans/05_phase5_agent_forums.md` |
+| `docs/plans/06_phase6_analysis_portfolio.md` |
+
+**Refresh the list after future cleanups on `main`:**
+
+```bash
+git diff --name-status main develop
+```
+
+Entries with status `A` (added when going from `main` to `develop`) are files present on `develop` but absent on `main`—verify each belongs in this develop-only set before relying on the diff alone.
+
+**Suggested workflow after `git checkout main` and `git merge develop`:**
+
+1. Remove the develop-only paths from the index and working tree on `main`, then commit (or amend the merge if appropriate):
+
+```bash
+git rm -f --ignore-unmatch \
+  AGENTS.md CLAUDE.md \
+  docs/execution_log.md \
+  docs/Interpretation_of_Interface_Metrics.md \
+  docs/Social_Phenomenon_Modeling_and_Design_CN.md \
+  docs/ConvenienceParadoxResearchModel_design.en.md \
+  docs/ConvenienceParadoxResearchModel_design.zh.md \
+  docs/plans/00_master_plan.md \
+  docs/plans/01_phase1_foundation.md \
+  docs/plans/02_phase2_simulation.md \
+  docs/plans/03_phase3_web_interface.md \
+  docs/plans/04_phase4_llm_integration.md \
+  docs/plans/05_phase5_agent_forums.md \
+  docs/plans/06_phase6_analysis_portfolio.md
+
+git commit -m "chore: strip develop-only paths from main after develop merge"
+```
+
+2. Extend the `git rm` list (and the table above) if new internal-only files are introduced on `develop`.
+
+**Note.** This section lives in `AGENTS.md` on `develop` only; it is intentionally removed from `main` by the cleanup above. Agents merging or pushing should follow this checklist so `main` stays free of those artifacts.
+
+---
+
 ## 1. Project Identity
 
 **Full Title**: *The Convenience Paradox: Agent-Based Modeling of Service Delegation and Social Involution*
