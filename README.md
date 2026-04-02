@@ -42,6 +42,8 @@ The project is built as a full-stack interactive research tool:
 
 **Neutrality notice**: The model is parameterized in abstract terms only. It does not characterise, evaluate, or make claims about any specific country, culture, or people. “Type A” and “Type B” are purely abstract configuration presets.
 
+The latest validated analysis is based on a `research_v2` offline campaign of **14,656 simulation runs** across four research packages. A full write-up of those results is available in [formal_research_report.md](formal_research_report.md).
+
 ---
 
 ## User interface demonstration
@@ -123,16 +125,16 @@ An experiment database with query, comparison, and deletion capabilities, powere
 
 ### Analysis
 
-Research results presentation with a hypothesis scoreboard, automated A/B comparison, and an on-demand parameter sensitivity heatmap.
+Research results presentation with a hypothesis scoreboard, automated A/B comparison, and an exploratory sensitivity heatmap in the dashboard, complemented by larger offline campaign evidence in the formal reporting pipeline.
 
 <!-- 📽️ GIF placeholder — record: show the 4 hypothesis cards with expandable panels, click “Run Both Presets”, show the comparison table and bar chart populating, then trigger the sensitivity heatmap -->
 ![Analysis Page Demo](docs/assets/gifs/analysis.gif)
 
 **What you can do:**
 
-- **Hypothesis scoreboard** — four cards (H1–H4), each with a status badge (*Confirmed* / *Supported* / *Partial*) and an expandable evidence panel quoting the key finding from batch experiments.
+- **Hypothesis scoreboard** — four cards (H1–H4) with status badges and expandable evidence panels that summarise the current research framing; the formal report extends these cards with larger offline campaign evidence.
 - **Type A vs Type B comparison** — one click runs both presets back-to-back server-side, then populates a six-metric comparison table (with percentage differences) and a grouped bar chart.
-- **Sensitivity heatmap** — on-demand 5×5 parameter sweep across delegation mean (0.2–0.8) × service cost factor (0.1–0.8); rendered as an interactive Plotly heatmap with hover tooltips showing the exact metric value at each grid point.
+- **Sensitivity heatmap** — an on-demand 5×5 dashboard sweep across delegation mean (0.2–0.8) × service cost factor (0.1–0.8), rendered as an interactive Plotly heatmap for exploratory use; the validated formal findings come from the much larger offline `research_v2` campaign.
 
 ---
 
@@ -167,24 +169,24 @@ The project is structured in three clearly separated layers — ABM core, LLM pe
 
 |        | Hypothesis                                                              | Status                                                                       |
 | ------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **H1** | Higher delegation leads to higher total systemic labour hours           | Confirmed (60-step runs: +22% labour hours in Type B)                        |
-| **H2** | A critical delegation threshold triggers irreversible involution spiral | Supported in part (efficiency plateau visible; cascade requires 200+ steps)   |
-| **H3** | Higher autonomy achieves lower stress and higher aggregate well-being   | Long-run phenomenon — requires 100+ steps for stress divergence to emerge  |
-| **H4** | Mixed-delegation societies are unstable, drifting toward one extreme    | Partially supported — network conformity drives polarisation                 |
+| **H1** | Higher delegation leads to higher total systemic labour hours           | Strong support — Type B maintains a ~30.0% labour premium at long horizon    |
+| **H2** | A critical delegation threshold triggers irreversible involution spiral | Strong support — overload onset concentrates in a narrow 3.0–3.25 task band |
+| **H3** | Higher autonomy achieves lower stress and higher aggregate well-being   | Partial support — Type A preserves substantially more available time         |
+| **H4** | Mixed-delegation societies are unstable, drifting toward one extreme    | Partial (important negative) — mixed-state dispersion stays weak            |
 
-### Key empirical finding (batch runs)
+### Latest validated findings (formal campaign)
 
-In 60-step batch runs (5 replications each):
+The latest validated summary comes from the `research_v2` offline campaign documented in [formal_research_report.md](formal_research_report.md). This campaign spans **14,656 simulation runs** across four research packages and uses backlog carryover, coordination costs, decomposed labour accounting, and tail-window aggregation over the final 20% of simulation steps.
 
-```
-                         Type A (Autonomy)    Type B (Convenience)
-Delegation Rate          0.265 ± 0.012        0.718 ± 0.007
-Total Labour Hours       395 ± 5.9            482 ± 11.3       (+22%)
-Social Efficiency        0.549 ± 0.008        0.576 ± 0.011
-Income Gini              0.147 ± 0.026        0.243 ± 0.024    (+65%)
-```
+| Metric | Latest validated result |
+| ------ | ----------------------- |
+| Campaign scale | 14,656 runs across 4 research packages (`research_v2`) |
+| H1 | At 450 steps, Type B produces 565.8 labour hours vs 435.2 for Type A, a **~30.0% premium** |
+| H2 | The overload threshold concentrates in a narrow **3.0–3.25 tasks/step** band |
+| H3 | Type A retains **3.65h** available time vs **2.46h** for Type B |
+| H4 | Mixed-system instability is weak; max final delegation std is **0.0125** |
 
-**H1**: Type B configurations generate about 22% more total labour hours — the involution pattern in quantitative form. **H3** stress divergence is a long-run emergent effect: short runs can understate systemic overhead, which motivates sensitivity analysis over run length.
+These updated results shift the README away from the earlier short-run picture: the strongest validated finding is not a brief convenience effect, but a structurally higher labour burden in high-delegation systems, paired with a narrow overload threshold and only weak evidence of mixed-state bifurcation under the current parameterization.
 
 ---
 
@@ -228,7 +230,7 @@ Four pages (Dash Pages + sidebar navigation):
 - **Simulation** — Type A / Type B presets, live time series, distributions, Sankey / waterfall flows, network view, skill radar
 - **LLM Studio** — per-role model choice, scenario parser, interpreter, profile generator, chart annotator, agent forums, audit trail
 - **Run Manager** — AG Grid history, filter/delete, side-by-side comparison
-- **Analysis** — hypothesis scoreboard, A/B runner, sensitivity heatmap
+- **Analysis** — hypothesis scoreboard, A/B runner, exploratory sensitivity heatmap, and context for the larger offline campaign/report workflow
 
 ### LLM-enhanced interface (optional Ollama)
 
@@ -307,8 +309,8 @@ Pytest configuration and custom marks live in `tests/conftest.py`.
 
 ## Narrative analysis campaigns
 
-For sequel-blog and report-oriented experiment bundles, use the narrative
-campaign runner:
+For report-oriented experiment bundles and larger offline evidence generation,
+use the narrative campaign runner:
 
 ```bash
 # Fast validation run
@@ -324,6 +326,8 @@ Outputs are written under `data/results/campaigns/<timestamp>_<tag>/` with:
 - package folders containing `research_summary.csv`, `blog_numbers.json`, and `figure_manifest.json`
 - `writing_support/` markdown assets such as the question-to-evidence crosswalk and claim-safety table
 
+These campaign directories produce the research summaries, figure manifests, and writing-support notes used in the final synthesis workflow. The current stable long-form write-up is the repo-root [formal_research_report.md](formal_research_report.md), while `analysis/reports/` keeps the broader set of campaign and probe markdown outputs.
+
 ---
 
 ## Repository layout
@@ -332,6 +336,7 @@ Outputs are written under `data/results/campaigns/<timestamp>_<tag>/` with:
 convenience-paradox/
 ├── LICENSE
 ├── README.md
+├── formal_research_report.md # Stable long-form synthesis from the latest offline campaign
 ├── AGENTS.md / CLAUDE.md     # AI-assistant charters (tooling); not runtime deps
 ├── environment.yml           # Conda env (recommended)
 ├── requirements.txt          # Pip mirror of core dependencies
@@ -341,7 +346,7 @@ convenience-paradox/
 ├── api/                      # LLM service, audit, Pydantic schemas
 ├── dash_app/                 # Dash app factory, pages, components, assets, db
 │   └── __main__.py           # `python -m dash_app` entry point
-├── analysis/                 # Batch runs, narrative campaigns, plots, reports/
+├── analysis/                 # Campaign runners, LLM role probe, plots, report artifacts
 ├── data/
 │   ├── empirical/            # Stylized facts (ILO, OECD, WVS, …) — committed
 │   └── results/              # Outputs & llm_logs — gitignored
@@ -378,7 +383,7 @@ The **core ABM** is fully rule-based so choices can be traced. **Roles 1–4** a
 
 ### The involution finding
 
-High-delegation configurations do not necessarily show higher stress in **short** windows — convenience can “work” locally — while total labour and inequality metrics move in ways consistent with H1. Longer horizons matter for stress and efficiency dynamics; that is a methodological takeaway for ABM design.
+The validated `research_v2` results point to a more structural pattern than the project's earlier short-run experiments suggested. High-delegation configurations generate persistently higher total labour, overload emerges through a narrow threshold band around 3.0–3.25 tasks per step, and autonomy-oriented settings preserve substantially more available time (3.65h vs 2.46h). At the same time, mixed-state instability turned out to be weaker than initially expected, with only modest dispersion under the current conformity rules. The methodological lesson is still white-box and ABM-centric: long-horizon dynamics, explicit backlog accounting, and careful claim boundaries matter more than any single dramatic narrative about “convenience”.
 
 ---
 
