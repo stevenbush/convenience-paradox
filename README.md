@@ -11,8 +11,9 @@ This model explores abstract social dynamics and is not intended to characterise
 ## Contents
 
 - [Overview](#overview)
-- [Research question and hypotheses](#research-question)
+- [User interface demonstration](#user-interface-demonstration)
 - [Architecture](#architecture)
+- [Research question and hypotheses](#research-question)
 - [Simulation model](#simulation-model)
 - [Features](#features)
 - [Setup and running](#setup-and-running)
@@ -43,6 +44,134 @@ The project is built as a full-stack interactive research tool:
 
 ---
 
+## User interface demonstration
+
+The dashboard is a four-page interactive research tool. Each page is described below, with a placeholder for a demo animation.
+
+### Simulation Dashboard
+
+The primary page for running and monitoring ABM simulations in real time.
+
+<!-- 📽️ GIF placeholder — record: select a preset, click Initialize, step through 30+ steps, show KPI cards updating and charts animating -->
+![Simulation Dashboard Demo](docs/assets/gifs/simulation-dashboard.gif)
+
+**What you can do:**
+
+- **Preset selector** — switch between *Type A (Autonomy-Oriented)* and *Type B (Convenience-Oriented)* configurations, or dial in a custom scenario with 11 parameter sliders (delegation mean, service cost, conformity pressure, task load, population size, and more).
+- **Live KPI bar** — four summary cards (Avg Stress, Total Labor Hours, Social Efficiency, Income Gini) update after every simulation step.
+- **10 interactive Plotly charts** covering all four research hypotheses:
+  - *Total Labor Hours* time series — the primary involution signal (H1).
+  - *Stress & Delegation* dual-axis trend — tracks the convenience-spiral dynamic (H2/H3).
+  - *Stress Distribution* histogram + *Delegation Preferences* distribution — reveals polarisation drift (H4).
+  - *Social Efficiency* trend + *Market Health* bar/line (unmatched tasks) — exposes the delegation threshold (H2).
+  - *Provider vs Consumer* scatter with stress colour encoding — shows role stratification emerging live.
+- **Advanced flow and topology views** — Task Flow Sankey (service pipeline per step), Fee Flow Waterfall (economic transfers), and a force-directed Network Topology where node size encodes hours spent providing services and node colour encodes stress.
+
+---
+
+### LLM Studio
+
+A unified interface for all five LLM roles. Each role has an independent model selector (populated from the live Ollama instance) and its own input/output panel. Every interaction is logged to the session audit trail.
+
+<!-- 📽️ GIF placeholder — record: cycle through all 5 role tabs, show a Scenario Parser run and the resulting params being applied, then a brief Agent Forums exchange -->
+![LLM Studio Demo](docs/assets/gifs/llm-studio.gif)
+
+| Role | Name | What it does |
+| ---- | ---- | ------------ |
+| **Role 1** | Scenario Parser | Paste a natural-language society description → LLM extracts five `SimulationParams` (delegation mean, service cost, conformity, tasks per step, population) → one-click apply to the Simulation Dashboard. |
+| **Role 2** | Profile Generator | Describe an agent persona in plain text → LLM generates a `delegation_preference` value and four skill scores (domestic, administrative, errand, maintenance) → inspectable JSON before injection. |
+| **Role 3** | Result Interpreter | Ask any research question → LLM receives six live simulation metrics and six parameter values as context → returns a narrative explanation referenced to the active hypothesis. |
+| **Role 4** | Viz Annotator | Supplies the current chart's data context → LLM generates a chart caption and three key quantitative insights. |
+| **Role 5** | Agent Forums *(Experimental)* | Select a participant cohort → up to three LLM dialogue turns on delegation norms → bounded preference update of ±0.06 max per agent → visible in the next simulation step. Clearly labelled as experimental in the UI. |
+
+All structured outputs are validated against Pydantic v2 schemas before use. The **Session Audit Log** tab records every prompt, raw response, parsed result, and timestamp for full transparency.
+
+---
+
+### Run Manager
+
+An experiment database with query, comparison, and deletion capabilities, powered by Dash AG Grid.
+
+<!-- 📽️ GIF placeholder — record: show the AG Grid table, apply a preset filter, select two runs, choose a metric, click Compare, show the overlay trend chart -->
+![Run Manager Demo](docs/assets/gifs/run-manager.gif)
+
+**What you can do:**
+
+- **Interactive AG Grid table** — sortable and filterable columns: run name, preset, agent count, steps, delegation rate, avg stress, income Gini, and timestamp.
+- **Filter bar** — free-text search by run name, preset dropdown (Type A / Type B / Custom), and a date-range picker.
+- **Save & delete** — name and save the current simulation run; delete selected rows with cascade to the step-level metrics table.
+- **Side-by-side comparison** — select up to 6 runs, choose one metric, and click *Compare* to render a summary KPI card per run alongside an aligned trend chart overlay for time-series comparison across runs.
+
+---
+
+### Analysis
+
+Research results presentation with a hypothesis scoreboard, automated A/B comparison, and an on-demand parameter sensitivity heatmap.
+
+<!-- 📽️ GIF placeholder — record: show the 4 hypothesis cards with expandable panels, click “Run Both Presets”, show the comparison table and bar chart populating, then trigger the sensitivity heatmap -->
+![Analysis Page Demo](docs/assets/gifs/analysis.gif)
+
+**What you can do:**
+
+- **Hypothesis scoreboard** — four cards (H1–H4), each with a status badge (*Confirmed* / *Supported* / *Partial*) and an expandable evidence panel quoting the key finding from batch experiments.
+- **Type A vs Type B comparison** — one click runs both presets back-to-back server-side, then populates a six-metric comparison table (with percentage differences) and a grouped bar chart.
+- **Sensitivity heatmap** — on-demand 5×5 parameter sweep across delegation mean (0.2–0.8) × service cost factor (0.1–0.8); rendered as an interactive Plotly heatmap with hover tooltips showing the exact metric value at each grid point.
+
+---
+
+## Architecture
+
+The project is structured in three clearly separated layers — ABM core, LLM periphery, and data — unified by a Plotly Dash multi-page web application. Dash callbacks call simulation and service code directly via Python imports; no REST layer is involved.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                      Plotly Dash 4.x  (multi-page SPA)                        │
+│                                                                                │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐  ┌────────────┐  │
+│  │  Simulation     │  │   LLM Studio    │  │ Run Manager  │  │  Analysis  │  │
+│  │  Dashboard      │  │   (5 Roles)     │  │              │  │            │  │
+│  └─────────────────┘  └─────────────────┘  └──────────────┘  └────────────┘  │
+│                                                                                │
+│  dash-bootstrap-components  (layout · grid · theming)                         │
+│  dash-ag-grid  (interactive run-history table)                                 │
+│  Plotly graph_objects / express  (10+ chart types: line, histogram, Sankey,   │
+│    waterfall, scatter, heatmap, network, radar …)                              │
+└───────────────────────────────┬────────────────────────────────────────────── ┘
+                                │  Python callbacks — direct import, no HTTP
+           ┌────────────────────┼─────────────────────┐
+           │                    │                     │
+┌──────────▼───────────┐  ┌─────▼──────────────┐  ┌──▼────────────────────────┐
+│   Mesa ABM Core       │  │   LLM Layer        │  │   Data Layer               │
+│   (white-box rules)   │  │   (peripheral)     │  │                            │
+│                       │  │                    │  │  Pandas DataFrames         │
+│   model/agents.py     │  │  api/llm_service.py│  │  SQLite  (runs.db)         │
+│   model/model.py      │  │  api/schemas.py    │  │  dash_app/db.py            │
+│   model/forums.py     │  │   (Pydantic v2)    │  │  Mesa DataCollector →      │
+│   model/params.py     │  │                    │  │   DataFrames → callbacks   │
+│                       │  │  Ollama runtime    │  │                            │
+│   Mesa 3.5.x          │  │  Qwen 3.5 4B /     │  │                            │
+│   Mesa-LLM 0.3.0      │  │  Qwen 3 1.7B       │  │                            │
+│   NetworkX            │  │  (local, Metal)    │  │                            │
+└───────────────────────┘  └────────────────────┘  └────────────────────────────┘
+```
+
+### Component summary
+
+| Layer | Library / Tool | Role |
+| ----- | -------------- | ---- |
+| Web framework | Plotly Dash 4.x + Dash Pages | Multi-page SPA routing, callback system |
+| UI components | dash-bootstrap-components | Responsive grid, cards, modals, badges |
+| Data table | dash-ag-grid | Sortable, filterable run-history grid |
+| Charts | Plotly `graph_objects` / `express` | All interactive figures (line, histogram, Sankey, waterfall, scatter, heatmap, network, radar) |
+| ABM engine | Mesa 3.5.x + Mesa-LLM 0.3.0 | Rule-based agent simulation; `AgentSet`, `DataCollector`, `NetworkGrid` |
+| Social network | NetworkX | Watts–Strogatz small-world graph (k=4, p=0.1) |
+| LLM runtime | Ollama + Qwen 3.5 4B | Local inference; Metal-accelerated on Apple Silicon |
+| Schema validation | Pydantic v2 | Structured LLM output contracts (`api/schemas.py`) |
+| Persistence | SQLite via `dash_app/db.py` | Run history, step-level metrics |
+| Analysis | Pandas 3.x + Matplotlib 3.x | Batch processing, publication figures |
+
+---
+
 ## Research question
 
 > *How do different levels of service delegation in a society affect individual well-being (leisure time, stress) and collective efficiency? Under what conditions does a "convenience spiral" (involution) emerge?*
@@ -69,42 +198,6 @@ Income Gini              0.147 ± 0.026        0.243 ± 0.024    (+65%)
 ```
 
 **H1**: Type B configurations generate about 22% more total labour hours — the involution pattern in quantitative form. **H3** stress divergence is a long-run emergent effect: short runs can understate systemic overhead, which motivates sensitivity analysis over run length.
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│               Plotly Dash 4.x dashboard                      │
-│  Simulation · LLM Studio · Run Manager · Analysis          │
-│  dash_app/pages/ · dash_app/components/ · dash_app/assets/   │
-└────────────────────────┬─────────────────────────────────────┘
-                         │  Python callbacks (direct import)
-          ┌──────────────┼──────────────┐
-          │              │              │
-┌─────────▼──────┐  ┌────▼──────────┐  ┌───▼───────────────────────┐
-│ Mesa ABM core  │  │ LLM layer     │  │ Data layer                 │
-│ (white-box)    │  │ (peripheral)  │  │ Pandas · SQLite            │
-│ agents.py      │  │ llm_service.py│  │ dash_app/db.py             │
-│ model.py       │  │ Ollama + Qwen │  └────────────────────────────┘
-│ forums.py      │  └───────────────┘
-└────────────────┘
-```
-
-### LLM integration (white-box principle)
-
-The LLM sits **at the periphery** of the simulation. The ABM core remains a transparent, rule-based model. This follows the interpretability stance discussed by Vanhee et al. (arXiv:2507.05723).
-
-| Role                            | Position                 | Description                                                 |
-| ------------------------------- | ------------------------ | ----------------------------------------------------------- |
-| **Role 1** — Scenario parser    | Input                    | Natural language → model parameters                         |
-| **Role 2** — Profile generator  | Input                    | Text description → explicit agent attributes                |
-| **Role 3** — Result interpreter | Output                   | Metrics + question → narrative explanation                  |
-| **Role 4** — Viz annotator      | Output                   | Chart context → captions / insights                         |
-| **Role 5** — Agent forums       | **Experimental** in-loop | Short norm dialogues; bounded preference updates            |
-
-All structured LLM outputs are validated with Pydantic (`api/schemas.py`); calls are logged under `data/results/llm_logs/` (gitignored).
 
 ---
 
@@ -225,6 +318,27 @@ Pytest configuration and custom marks live in `tests/conftest.py`.
 
 ---
 
+## Narrative analysis campaigns
+
+For sequel-blog and report-oriented experiment bundles, use the narrative
+campaign runner:
+
+```bash
+# Fast validation run
+python -m analysis.narrative_campaign --scale smoke --packages package_a_everyday_friction --skip-report
+
+# Full campaign using the local machine's capped default worker pool (8)
+python -m analysis.narrative_campaign --scale full --workers 8 --tag blog_pack
+```
+
+Outputs are written under `data/results/campaigns/<timestamp>_<tag>/` with:
+
+- `manifest.json` for reproducibility metadata
+- package folders containing `research_summary.csv`, `blog_numbers.json`, and `figure_manifest.json`
+- `writing_support/` markdown assets such as the question-to-evidence crosswalk and claim-safety table
+
+---
+
 ## Repository layout
 
 ```
@@ -240,7 +354,7 @@ convenience-paradox/
 ├── api/                      # LLM service, audit, Pydantic schemas
 ├── dash_app/                 # Dash app factory, pages, components, assets, db
 │   └── __main__.py           # `python -m dash_app` entry point
-├── analysis/                 # Batch runs, sensitivity, plots, reports/
+├── analysis/                 # Batch runs, narrative campaigns, plots, reports/
 ├── data/
 │   ├── empirical/            # Stylized facts (ILO, OECD, WVS, …) — committed
 │   └── results/              # Outputs & llm_logs — gitignored

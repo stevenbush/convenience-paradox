@@ -285,3 +285,97 @@ Avg Stress               0.018 ± 0.002        0.006 ± 0.002          ← H3 lo
 | H4 | 🔶 Partial | Network conformity drives polarisation; bimodality requires mixed-delegation start |
 
 ### Total Test Count: 80/80 PASS (excluding live Ollama tests)
+
+---
+
+## Post-Phase 6 — Research Refinement & Service-Cost Audit ✅ COMPLETE
+
+**Date**: 2026-04-01
+
+### Files Created
+
+| File | Description |
+|------|-------------|
+| `model/research_model.py` | Research-only engine with backlog return, requester coordination time, stricter provider matching, and service-friction accounting |
+| `docs/ConvenienceParadoxResearchModel_design.en.md` | English design note documenting the research engine goals, architecture, dashboard-compatibility boundary, and remaining limits |
+| `docs/ConvenienceParadoxResearchModel_design.zh.md` | Chinese design note documenting the research engine goals, architecture, dashboard-compatibility boundary, and remaining limits |
+| `tests/test_research_model.py` | Unit/integration coverage for backlog return, requester coordination cost, provider friction, and research-only reporters |
+| `analysis/reports/2026-04-01_service_cost_mechanism_audit_en.md` | English audit of the stable model explaining the original counter-intuitive service-cost results |
+| `analysis/reports/2026-04-01_service_cost_mechanism_audit_zh.md` | Chinese translation of the stable-model mechanism audit |
+| `analysis/reports/2026-04-01_service_cost_rerun_report_en.md` | English report comparing stable vs `research_v2` rerun results |
+| `analysis/reports/2026-04-01_service_cost_rerun_report_zh.md` | Chinese translation of the rerun report |
+
+### Files Updated
+
+| File | Description |
+|------|-------------|
+| `analysis/narrative_campaign.py` | Added `research_v2` engine support, service-cost context scans, task-load cost atlas, progress tracking, ETA logging, checkpoint CSV writes, and dynamic model-metric aggregation |
+| `model/research_model.py` | Reduced per-run initialisation logging from INFO to DEBUG to avoid campaign I/O overhead |
+| `tests/test_narrative_campaign.py` | Added progress/checkpoint assertions and research-metric aggregation assertions |
+| `docs/execution_log.md` | Appended this research-refinement record |
+
+### Research Outputs
+
+Primary campaign:
+
+- `data/results/campaigns/20260401_223144_service_cost_research_v2_progress/`
+
+Key additional output:
+
+- `data/results/campaigns/20260401_223144_service_cost_research_v2_progress/summaries/research_metric_probe.csv`
+
+### Test Results
+
+```
+146 / 146 tests PASS
+
+  tests/test_agents.py
+  tests/test_model.py
+  tests/test_research_model.py
+  tests/test_narrative_campaign.py
+  tests/test_dash_shell.py
+  tests/test_dash_components.py
+```
+
+### Key Technical Decisions
+
+1. **Dashboard zero-change boundary preserved**  
+   No changes were made to `dash_app/`, `api/schemas.py`, or `model/params.py`. The dashboard remains bound to `ConvenienceParadoxModel`; all mechanism changes live in `ConvenienceParadoxResearchModel`.
+
+2. **Research engine kept interface-compatible with the stable model**  
+   The research engine continues to expose `step()`, `get_model_dataframe()`, `get_agent_dataframe()`, `get_agent_states()`, and `get_params()` so analysis scripts can swap engines without touching the dashboard.
+
+3. **Campaign runner now exposes user-readable runtime progress**  
+   Added `progress.json`, `progress.log`, percent-complete tracking, ETA estimates, and periodic checkpoint CSV writes to support long-running campaigns.
+
+4. **Research-only metrics required dynamic aggregation**  
+   The first `research_v2` campaign completed successfully, but a fixed model-metric whitelist in `analysis/narrative_campaign.py` prevented `backlog_tasks`, `delegation_match_rate`, and `delegation_labor_delta` from entering the campaign summaries. This was corrected after the run by switching summary aggregation to the model dataframe’s actual metric columns.
+
+### Main Findings
+
+1. **The original stable-model “cheap service lowers stress” result was too broad**  
+   Under `research_v2`, cheap service still lowers stress in low-load contexts, but the sign flips around task load `~3.0`, where cheap service begins to raise stress by triggering backlog.
+
+2. **The convenience baseline is no longer lower-stress once missing frictions are restored**  
+   At 200 steps, the stable Type B baseline had lower stress than Type A (`0.0116` vs `0.0346`), but under `research_v2` Type B becomes slightly higher-stress (`0.0492` vs `0.0413`) while also using much more labor.
+
+3. **The dominant overload mechanism is now a true interaction**  
+   The rerun supports a `task pressure x delegation x capacity` story rather than the stable model’s simpler “task pressure dominates alone” interpretation.
+
+4. **Backlog and match-rate collapse now appear in the expected region**  
+   In the supplemental probe, overloaded cheap-service cells show near-zero match rates and very large backlog levels, which is the missing scarcity pathway the stable model could not express.
+
+### Remaining Limitation
+
+`delegation_labor_delta` is still not a reliable welfare summary in severe overload cells. It remains negative even where backlog explodes because it does not yet capitalise deferred backlog as outstanding future work. A future calibration pass should either:
+
+- increase provider friction further, or
+- replace this metric with a backlog-adjusted outstanding-work measure
+
+### Status
+
+- Stable dashboard contract: ✅ preserved
+- Research engine implemented: ✅
+- Long-run research campaign completed: ✅
+- English + Chinese reports written separately: ✅
+- Follow-up calibration still recommended for backlog-adjusted labor accounting: 🔶
