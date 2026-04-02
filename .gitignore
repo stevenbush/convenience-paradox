@@ -42,3 +42,6 @@ Thumbs.db
 # Ignore local analysis notes
 docs/Data_Source_Analysis.md
 analysis/reports/Social Phenomena and Reflections-1.md
+
+# README demo GIFs (multi-MB each; keep local per repo size policy)
+docs/assets/gifs/*.gif

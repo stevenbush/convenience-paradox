@@ -71,20 +71,37 @@ The primary page for running and monitoring ABM simulations in real time.
 
 ### LLM Studio
 
-A unified interface for all five LLM roles. Each role has an independent model selector (populated from the live Ollama instance) and its own input/output panel. Every interaction is logged to the session audit trail.
+A unified interface for all five LLM roles. Each role has an independent model selector (populated from the live Ollama instance) and its own input/output panel. Every interaction is logged to the session audit trail
 
-<!-- 📽️ GIF placeholder — record: cycle through all 5 role tabs, show a Scenario Parser run and the resulting params being applied, then a brief Agent Forums exchange -->
-![LLM Studio Demo](docs/assets/gifs/llm-studio.gif)
+**Role 1 | Scenario Parser**
 
-| Role | Name | What it does |
-| ---- | ---- | ------------ |
-| **Role 1** | Scenario Parser | Paste a natural-language society description → LLM extracts five `SimulationParams` (delegation mean, service cost, conformity, tasks per step, population) → one-click apply to the Simulation Dashboard. |
-| **Role 2** | Profile Generator | Describe an agent persona in plain text → LLM generates a `delegation_preference` value and four skill scores (domestic, administrative, errand, maintenance) → inspectable JSON before injection. |
-| **Role 3** | Result Interpreter | Ask any research question → LLM receives six live simulation metrics and six parameter values as context → returns a narrative explanation referenced to the active hypothesis. |
-| **Role 4** | Viz Annotator | Supplies the current chart's data context → LLM generates a chart caption and three key quantitative insights. |
-| **Role 5** | Agent Forums *(Experimental)* | Select a participant cohort → up to three LLM dialogue turns on delegation norms → bounded preference update of ±0.06 max per agent → visible in the next simulation step. Clearly labelled as experimental in the UI. |
+Paste a natural-language society description → LLM extracts five `SimulationParams` (delegation mean, service cost, conformity, tasks per step, population) → one-click apply to the Simulation Dashboard.
 
-All structured outputs are validated against Pydantic v2 schemas before use. The **Session Audit Log** tab records every prompt, raw response, parsed result, and timestamp for full transparency.
+![Role 1 Demo](docs/assets/gifs/llm-studio-role-1.gif)
+
+**Role 2 | Profile Generator**
+
+Describe an agent persona in plain text → LLM generates a `delegation_preference` value and four skill scores (domestic, administrative, errand, maintenance) → inspectable JSON before injection.
+
+![Role 2 Demo](docs/assets/gifs/llm-studio-role-2.gif)
+
+**Role 3 | Result Interpreter**
+
+Ask any research question → LLM receives six live simulation metrics and six parameter values as context → returns a narrative explanation referenced to the active hypothesis.
+
+![Role 3 Demo](docs/assets/gifs/llm-studio-role-3.gif)
+
+**Role 4 | Viz Annotator**
+
+Supplies the current chart's data context → LLM generates a chart caption and three key quantitative insights.
+
+![Role 4 Demo](docs/assets/gifs/llm-studio-role-4.gif)
+
+**Role 5 | Agent Forums *(Experimental)***
+
+Select a participant cohort → up to three LLM dialogue turns on delegation norms → bounded preference update of ±0.06 max per agent → visible in the next simulation step. Clearly labelled as experimental in the UI.
+
+![Role 5 Demo](docs/assets/gifs/llm-studio-role-5.gif)
 
 ---
 
@@ -123,37 +140,7 @@ Research results presentation with a hypothesis scoreboard, automated A/B compar
 
 The project is structured in three clearly separated layers — ABM core, LLM periphery, and data — unified by a Plotly Dash multi-page web application. Dash callbacks call simulation and service code directly via Python imports; no REST layer is involved.
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                      Plotly Dash 4.x  (multi-page SPA)                        │
-│                                                                                │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐  ┌────────────┐  │
-│  │  Simulation     │  │   LLM Studio    │  │ Run Manager  │  │  Analysis  │  │
-│  │  Dashboard      │  │   (5 Roles)     │  │              │  │            │  │
-│  └─────────────────┘  └─────────────────┘  └──────────────┘  └────────────┘  │
-│                                                                                │
-│  dash-bootstrap-components  (layout · grid · theming)                         │
-│  dash-ag-grid  (interactive run-history table)                                 │
-│  Plotly graph_objects / express  (10+ chart types: line, histogram, Sankey,   │
-│    waterfall, scatter, heatmap, network, radar …)                              │
-└───────────────────────────────┬────────────────────────────────────────────── ┘
-                                │  Python callbacks — direct import, no HTTP
-           ┌────────────────────┼─────────────────────┐
-           │                    │                     │
-┌──────────▼───────────┐  ┌─────▼──────────────┐  ┌──▼────────────────────────┐
-│   Mesa ABM Core       │  │   LLM Layer        │  │   Data Layer               │
-│   (white-box rules)   │  │   (peripheral)     │  │                            │
-│                       │  │                    │  │  Pandas DataFrames         │
-│   model/agents.py     │  │  api/llm_service.py│  │  SQLite  (runs.db)         │
-│   model/model.py      │  │  api/schemas.py    │  │  dash_app/db.py            │
-│   model/forums.py     │  │   (Pydantic v2)    │  │  Mesa DataCollector →      │
-│   model/params.py     │  │                    │  │   DataFrames → callbacks   │
-│                       │  │  Ollama runtime    │  │                            │
-│   Mesa 3.5.x          │  │  Qwen 3.5 4B /     │  │                            │
-│   Mesa-LLM 0.3.0      │  │  Qwen 3 1.7B       │  │                            │
-│   NetworkX            │  │  (local, Metal)    │  │                            │
-└───────────────────────┘  └────────────────────┘  └────────────────────────────┘
-```
+![Architecture Overview](docs/assets/architecture-overview.svg)
 
 ### Component summary
 
