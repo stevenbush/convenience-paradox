@@ -4,6 +4,24 @@ This file defines the operating rules, conventions, and context for any AI agent
 
 ---
 
+## GitHub (`origin`): only `main` is public
+
+**Hard rule.** The remote **`origin`** (GitHub) must expose **only the `main` branch** to the public. **`develop` is for local development only** and must **never** be pushed to `origin`.
+
+- **Allowed:** `git push origin main` (and tags, if the owner requests releases).
+- **Forbidden unless the repository owner explicitly instructs otherwise:** `git push origin develop`, `git push --all origin`, or pushing any other branch to `origin`.
+- **If `origin/develop` exists by mistake**, remove it from GitHub and stop tracking it locally:
+
+```bash
+git push origin --delete develop
+git checkout develop
+git branch --unset-upstream
+```
+
+Agents must not recreate `origin/develop` or suggest pushing `develop` to GitHub as part of routine workflow.
+
+---
+
 ## Syncing `develop` → `main` (paths to omit on `main`)
 
 **Policy.** The `main` branch is the public release line. The `develop` branch may keep internal or agent-facing material that must **not** reappear on `main` after a merge. Git does not filter paths during `git merge` automatically—whoever performs the sync must **remove the paths below from `main`** (or avoid bringing them in) after integrating `develop`.
