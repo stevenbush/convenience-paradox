@@ -1,0 +1,188 @@
+/* ==========================================================================
+   Shell Layout — Top bar, sidebar, and content area positioning
+   ========================================================================== */
+
+/* --- Global resets --- */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--cp-font-sans);
+  font-size: var(--cp-text-base);
+  color: var(--cp-text-primary);
+  background-color: var(--cp-bg);
+  line-height: var(--cp-leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Override Dash default container padding */
+._dash-loading { display: none; }
+
+/* --- Top bar --- */
+.cp-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--cp-topbar-height);
+  background: var(--cp-surface);
+  border-bottom: 1px solid var(--cp-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--cp-space-6);
+  z-index: 1030;
+  box-shadow: var(--cp-shadow-sm);
+}
+
+.cp-topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-3);
+  text-decoration: none;
+  color: var(--cp-text-primary);
+}
+
+.cp-topbar__title {
+  font-size: var(--cp-text-lg);
+  font-weight: var(--cp-weight-semibold);
+  color: var(--cp-text-primary);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.cp-topbar__subtitle {
+  font-size: var(--cp-text-xs);
+  color: var(--cp-text-tertiary);
+  font-weight: var(--cp-weight-normal);
+  margin-left: var(--cp-space-2);
+}
+
+.cp-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-4);
+}
+
+/* --- Shell container --- */
+.cp-shell {
+  display: flex;
+  margin-top: var(--cp-topbar-height);
+  min-height: calc(100vh - var(--cp-topbar-height));
+}
+
+/* --- Sidebar --- */
+.cp-sidebar {
+  position: fixed;
+  top: var(--cp-topbar-height);
+  left: 0;
+  bottom: 0;
+  width: var(--cp-sidebar-width);
+  background: var(--cp-surface);
+  border-right: 1px solid var(--cp-border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 1020;
+  transition: width var(--cp-transition-normal);
+}
+
+.cp-sidebar__nav {
+  padding: var(--cp-space-4) 0;
+  flex-shrink: 0;
+}
+
+.cp-sidebar__controls {
+  flex: 1;
+  padding: var(--cp-space-2) var(--cp-space-4);
+  border-top: 1px solid var(--cp-border);
+  overflow-y: auto;
+}
+
+.cp-sidebar__footer {
+  padding: var(--cp-space-3) var(--cp-space-4);
+  border-top: 1px solid var(--cp-border);
+  flex-shrink: 0;
+}
+
+/* --- Nav items --- */
+.cp-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-3);
+  padding: var(--cp-space-3) var(--cp-space-5);
+  margin: var(--cp-space-1) var(--cp-space-3);
+  color: var(--cp-text-secondary);
+  text-decoration: none;
+  font-size: var(--cp-text-base);
+  font-weight: var(--cp-weight-medium);
+  border-radius: var(--cp-radius-md);
+  border-left: 3px solid transparent;
+  transition: all var(--cp-transition-fast);
+  cursor: pointer;
+}
+
+.cp-nav-item:hover {
+  background: var(--cp-bg);
+  color: var(--cp-text-primary);
+  text-decoration: none;
+}
+
+.cp-nav-item--active {
+  background: var(--cp-primary-light);
+  color: var(--cp-primary);
+  border-left-color: var(--cp-primary);
+  font-weight: var(--cp-weight-semibold);
+}
+
+.cp-nav-item--active:hover {
+  background: var(--cp-primary-light);
+  color: var(--cp-primary);
+}
+
+.cp-nav-item__icon {
+  width: 20px;
+  text-align: center;
+  font-size: var(--cp-text-md);
+  flex-shrink: 0;
+}
+
+/* --- Content area --- */
+.cp-content {
+  margin-left: var(--cp-sidebar-width);
+  flex: 1;
+  padding: var(--cp-space-6);
+  min-width: 0;
+  transition: margin-left var(--cp-transition-normal);
+}
+
+/* --- Page header --- */
+.cp-page-header {
+  margin-bottom: var(--cp-space-6);
+}
+
+.cp-page-title {
+  font-size: var(--cp-text-2xl);
+  font-weight: var(--cp-weight-bold);
+  color: var(--cp-text-primary);
+  margin: 0 0 var(--cp-space-1) 0;
+  letter-spacing: -0.02em;
+}
+
+.cp-page-subtitle {
+  font-size: var(--cp-text-sm);
+  color: var(--cp-text-tertiary);
+  margin: 0;
+}
+
+/* --- Section headers --- */
+.cp-section-label {
+  font-size: var(--cp-text-xs);
+  font-weight: var(--cp-weight-semibold);
+  color: var(--cp-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--cp-space-3);
+  padding: 0 var(--cp-space-5);
+}

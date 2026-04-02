@@ -1,0 +1,108 @@
+/* ==========================================================================
+   Design Tokens — The Convenience Paradox Dashboard
+   All visual properties are defined here as CSS custom properties.
+   Components reference tokens exclusively — never hardcoded values.
+   ========================================================================== */
+
+:root {
+  /* --- Brand / Primary --- */
+  --cp-primary:           #2C8C99;
+  --cp-primary-hover:     #237580;
+  --cp-primary-light:     #E8F4F6;
+  --cp-primary-subtle:    #D0EAED;
+  --cp-primary-rgb:       44, 140, 153;
+
+  /* --- Neutrals --- */
+  --cp-bg:                #F8FAFB;
+  --cp-surface:           #FFFFFF;
+  --cp-border:            #E2E8F0;
+  --cp-border-strong:     #CBD5E1;
+
+  /* --- Text --- */
+  --cp-text-primary:      #1E293B;
+  --cp-text-secondary:    #64748B;
+  --cp-text-tertiary:     #94A3B8;
+  --cp-text-inverse:      #FFFFFF;
+
+  /* --- Semantic --- */
+  --cp-success:           #27AE60;
+  --cp-success-light:     #E8F8EF;
+  --cp-warning:           #E67E22;
+  --cp-warning-light:     #FEF3E2;
+  --cp-danger:            #E74C3C;
+  --cp-danger-light:      #FDEDEB;
+  --cp-info:              #3498DB;
+  --cp-info-light:        #EBF5FB;
+
+  /* --- Chart palette (8 colors, accessible) --- */
+  --cp-chart-1:           #2C8C99;
+  --cp-chart-2:           #E67E22;
+  --cp-chart-3:           #27AE60;
+  --cp-chart-4:           #8E44AD;
+  --cp-chart-5:           #E74C3C;
+  --cp-chart-6:           #3498DB;
+  --cp-chart-7:           #F39C12;
+  --cp-chart-8:           #1ABC9C;
+
+  /* --- Typography --- */
+  --cp-font-sans:         'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                          Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --cp-font-mono:         'Fira Code', 'SF Mono', 'Cascadia Code',
+                          'Consolas', monospace;
+
+  --cp-text-xs:           0.75rem;
+  --cp-text-sm:           0.8125rem;
+  --cp-text-base:         0.875rem;
+  --cp-text-md:           1rem;
+  --cp-text-lg:           1.125rem;
+  --cp-text-xl:           1.375rem;
+  --cp-text-2xl:          1.75rem;
+  --cp-text-3xl:          2.25rem;
+
+  --cp-weight-normal:     400;
+  --cp-weight-medium:     500;
+  --cp-weight-semibold:   600;
+  --cp-weight-bold:       700;
+
+  --cp-leading-tight:     1.25;
+  --cp-leading-normal:    1.5;
+  --cp-leading-relaxed:   1.75;
+
+  /* --- Spacing (8px grid) --- */
+  --cp-space-0:           0;
+  --cp-space-1:           0.25rem;
+  --cp-space-2:           0.5rem;
+  --cp-space-3:           0.75rem;
+  --cp-space-4:           1rem;
+  --cp-space-5:           1.25rem;
+  --cp-space-6:           1.5rem;
+  --cp-space-8:           2rem;
+  --cp-space-10:          2.5rem;
+  --cp-space-12:          3rem;
+
+  /* --- Elevation --- */
+  --cp-shadow-sm:         0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --cp-shadow-md:         0 1px 3px 0 rgba(0, 0, 0, 0.08),
+                          0 1px 2px -1px rgba(0, 0, 0, 0.06);
+  --cp-shadow-lg:         0 4px 6px -1px rgba(0, 0, 0, 0.08),
+                          0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --cp-shadow-xl:         0 10px 15px -3px rgba(0, 0, 0, 0.08),
+                          0 4px 6px -4px rgba(0, 0, 0, 0.04);
+
+  /* --- Border Radius --- */
+  --cp-radius-sm:         4px;
+  --cp-radius-md:         6px;
+  --cp-radius-lg:         8px;
+  --cp-radius-xl:         12px;
+  --cp-radius-full:       9999px;
+
+  /* --- Transitions --- */
+  --cp-transition-fast:   150ms ease;
+  --cp-transition-normal: 250ms ease;
+  --cp-transition-slow:   350ms ease;
+
+  /* --- Layout dimensions --- */
+  --cp-topbar-height:     52px;
+  --cp-sidebar-width:     252px;
+  --cp-sidebar-collapsed: 64px;
+}

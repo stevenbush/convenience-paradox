@@ -1,0 +1,32 @@
+# The Convenience Paradox — Python Dependencies
+# Install with: pip install -r requirements.txt
+# Recommended: use the conda environment (environment.yml) for full reproducibility.
+
+# ABM framework
+mesa==3.5.1
+mesa-llm==0.3.0
+
+# Web dashboard (Dash 4.x sits on Flask)
+dash>=4.0.0,<5
+dash-bootstrap-components>=2.0.0
+dash-ag-grid>=31.0.0
+Flask==3.1.3
+
+# Data science
+pandas==3.0.1
+scipy==1.17.1
+networkx==3.6.1
+
+# Visualisation
+plotly==6.6.0
+matplotlib==3.10.8
+
+# Data validation
+pydantic==2.12.5
+
+# Local LLM runtime SDK
+ollama==0.6.1
+httpx[socks]
+
+# Testing
+pytest==9.0.2

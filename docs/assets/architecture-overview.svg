@@ -1,0 +1,204 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1000" viewBox="0 0 1400 1000" role="img" aria-labelledby="title desc">
+  <title id="title">The Convenience Paradox architecture overview</title>
+  <desc id="desc">Static architecture diagram showing the presentation layer built with Plotly Dash, the Python callback control plane, and the ABM, LLM, and data layers.</desc>
+
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f7fafc"/>
+      <stop offset="100%" stop-color="#eef4ff"/>
+    </linearGradient>
+    <linearGradient id="dashGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f6f9ff"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#94a3b8" flood-opacity="0.22"/>
+    </filter>
+    <style>
+      .outer {
+        fill: #ffffff;
+        stroke: #d7e1ef;
+        stroke-width: 1.5;
+      }
+      .dash-shell {
+        fill: url(#dashGradient);
+        stroke: #c9d8f2;
+        stroke-width: 2;
+      }
+      .card {
+        fill: #ffffff;
+        stroke: #d6dfeb;
+        stroke-width: 1.5;
+      }
+      .card-soft {
+        fill: #f8fbff;
+        stroke: #d6dfeb;
+        stroke-width: 1.5;
+      }
+      .pill {
+        fill: #ffffff;
+        stroke: #d6dfeb;
+        stroke-width: 1.5;
+      }
+      .callback-pill {
+        fill: #eef4ff;
+        stroke: #6d8cff;
+        stroke-width: 2;
+      }
+      .connector {
+        fill: none;
+        stroke: #64748b;
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .divider {
+        fill: none;
+        stroke: #e2e8f0;
+        stroke-width: 1.5;
+      }
+      .eyebrow {
+        font: 700 14px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        letter-spacing: 1.6px;
+        text-transform: uppercase;
+        fill: #5b6b83;
+      }
+      .title {
+        font: 700 31px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        fill: #162033;
+      }
+      .subtitle {
+        font: 500 16px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        fill: #5b6b83;
+      }
+      .panel-title {
+        font: 700 24px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        fill: #182235;
+      }
+      .panel-subtitle {
+        font: 600 16px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        fill: #52637a;
+      }
+      .label {
+        font: 700 18px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        fill: #172033;
+      }
+      .body {
+        font: 500 16px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        fill: #334155;
+      }
+      .note {
+        font: 500 15px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        fill: #52637a;
+      }
+      .chip-text {
+        font: 600 14px "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        fill: #314158;
+      }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="1000" fill="url(#bgGradient)"/>
+  <rect class="outer" x="40" y="28" width="1320" height="944" rx="28" filter="url(#softShadow)"/>
+
+  <text class="eyebrow" x="80" y="72">Presentation Layer</text>
+  <rect class="dash-shell" x="80" y="92" width="1240" height="430" rx="26"/>
+  <text class="title" x="700" y="142" text-anchor="middle">Plotly Dash 4.x</text>
+  <text class="subtitle" x="700" y="170" text-anchor="middle">Multi-page research interface for simulation, LLM tooling, analysis, and run management</text>
+
+  <rect x="120" y="205" width="245" height="110" rx="18" fill="#fff8f0" stroke="#f2d2a8" stroke-width="1.5"/>
+  <rect x="120" y="205" width="245" height="10" rx="18" fill="#e9a54b"/>
+  <text class="panel-title" x="242.5" y="258" text-anchor="middle">Simulation</text>
+  <text class="panel-title" x="242.5" y="286" text-anchor="middle">Dashboard</text>
+
+  <rect x="405" y="205" width="245" height="110" rx="18" fill="#f4f7ff" stroke="#cfd8ff" stroke-width="1.5"/>
+  <rect x="405" y="205" width="245" height="10" rx="18" fill="#6d8cff"/>
+  <text class="panel-title" x="527.5" y="258" text-anchor="middle">LLM Studio</text>
+  <text class="panel-subtitle" x="527.5" y="286" text-anchor="middle">Five transparent roles</text>
+
+  <rect x="690" y="205" width="245" height="110" rx="18" fill="#f3fbf7" stroke="#c7e8d7" stroke-width="1.5"/>
+  <rect x="690" y="205" width="245" height="10" rx="18" fill="#39a97c"/>
+  <text class="panel-title" x="812.5" y="272" text-anchor="middle">Run Manager</text>
+
+  <rect x="975" y="205" width="245" height="110" rx="18" fill="#fbf6ff" stroke="#dfd0fb" stroke-width="1.5"/>
+  <rect x="975" y="205" width="245" height="10" rx="18" fill="#8a63d2"/>
+  <text class="panel-title" x="1097.5" y="272" text-anchor="middle">Analysis</text>
+
+  <rect class="pill" x="120" y="345" width="1160" height="42" rx="16"/>
+  <text class="label" x="148" y="372">dash-bootstrap-components</text>
+  <text class="note" x="515" y="372">layout, responsive grid, cards, theming</text>
+
+  <rect class="pill" x="120" y="396" width="1160" height="42" rx="16"/>
+  <text class="label" x="148" y="423">dash-ag-grid</text>
+  <text class="note" x="287" y="423">interactive run-history table with sorting and filtering</text>
+
+  <rect class="pill" x="120" y="447" width="1160" height="56" rx="16"/>
+  <text class="label" x="148" y="477">Plotly graph_objects / express</text>
+  <text class="note" x="148" y="500">line, histogram, Sankey, waterfall, scatter, heatmap, network, radar, and more</text>
+
+  <rect class="pill" x="610" y="536" width="180" height="26" rx="13"/>
+  <text class="eyebrow" x="700" y="553" text-anchor="middle">Control Plane</text>
+  <rect class="callback-pill" x="470" y="572" width="460" height="82" rx="22"/>
+  <text class="panel-title" x="700" y="612" text-anchor="middle">Python callbacks</text>
+  <text class="panel-subtitle" x="700" y="637" text-anchor="middle">Direct imports, no REST or HTTP layer</text>
+
+  <path class="connector" d="M 700 522 L 700 536"/>
+  <path class="connector" d="M 700 562 L 700 572"/>
+  <path class="connector" d="M 700 654 L 700 686"/>
+  <path class="connector" d="M 700 686 L 260 686 L 260 706" marker-end="url(#arrow)"/>
+  <path class="connector" d="M 700 686 L 700 706" marker-end="url(#arrow)"/>
+  <path class="connector" d="M 700 686 L 1140 686 L 1140 706" marker-end="url(#arrow)"/>
+
+  <text class="eyebrow" x="80" y="702">Core Services</text>
+
+  <rect class="card" x="80" y="720" width="380" height="250" rx="24"/>
+  <rect x="80" y="720" width="380" height="12" rx="24" fill="#e9a54b"/>
+  <text class="panel-title" x="110" y="768">Mesa ABM Core</text>
+  <text class="panel-subtitle" x="110" y="794">White-box simulation rules</text>
+  <path class="divider" d="M 110 815 H 430"/>
+  <text class="body" x="110" y="844">model/agents.py</text>
+  <text class="body" x="110" y="870">model/model.py</text>
+  <text class="body" x="110" y="896">model/forums.py</text>
+  <text class="body" x="110" y="922">model/params.py</text>
+  <rect x="110" y="942" width="92" height="28" rx="14" fill="#fff3df" stroke="#f2d2a8"/>
+  <text class="chip-text" x="156" y="960" text-anchor="middle">Mesa 3.5.x</text>
+  <rect x="212" y="942" width="118" height="28" rx="14" fill="#fff3df" stroke="#f2d2a8"/>
+  <text class="chip-text" x="271" y="960" text-anchor="middle">Mesa-LLM 0.3.0</text>
+  <rect x="340" y="942" width="90" height="28" rx="14" fill="#fff3df" stroke="#f2d2a8"/>
+  <text class="chip-text" x="385" y="960" text-anchor="middle">NetworkX</text>
+
+  <rect class="card" x="510" y="720" width="380" height="250" rx="24"/>
+  <rect x="510" y="720" width="380" height="12" rx="24" fill="#6d8cff"/>
+  <text class="panel-title" x="540" y="768">LLM Layer</text>
+  <text class="panel-subtitle" x="540" y="794">Peripheral, schema-validated interfaces</text>
+  <path class="divider" d="M 540 815 H 860"/>
+  <text class="body" x="540" y="844">api/llm_service.py</text>
+  <text class="body" x="540" y="870">api/schemas.py</text>
+  <text class="body" x="540" y="896">Pydantic v2 contracts</text>
+  <text class="body" x="540" y="922">Ollama runtime for local inference</text>
+  <rect x="540" y="942" width="114" height="28" rx="14" fill="#eef2ff" stroke="#cfd8ff"/>
+  <text class="chip-text" x="597" y="960" text-anchor="middle">Qwen 3.5 4B</text>
+  <rect x="664" y="942" width="114" height="28" rx="14" fill="#eef2ff" stroke="#cfd8ff"/>
+  <text class="chip-text" x="721" y="960" text-anchor="middle">Qwen 3 1.7B</text>
+  <rect x="788" y="942" width="72" height="28" rx="14" fill="#eef2ff" stroke="#cfd8ff"/>
+  <text class="chip-text" x="824" y="960" text-anchor="middle">Metal</text>
+
+  <rect class="card" x="940" y="720" width="380" height="250" rx="24"/>
+  <rect x="940" y="720" width="380" height="12" rx="24" fill="#39a97c"/>
+  <text class="panel-title" x="970" y="768">Data Layer</text>
+  <text class="panel-subtitle" x="970" y="794">Persistence and callback-ready metrics</text>
+  <path class="divider" d="M 970 815 H 1290"/>
+  <text class="body" x="970" y="844">Pandas DataFrames</text>
+  <text class="body" x="970" y="870">SQLite (runs.db)</text>
+  <text class="body" x="970" y="896">dash_app/db.py</text>
+  <text class="body" x="970" y="922">Mesa DataCollector -&gt; DataFrames -&gt; callbacks</text>
+  <rect x="970" y="942" width="90" height="28" rx="14" fill="#ebfbf3" stroke="#c7e8d7"/>
+  <text class="chip-text" x="1015" y="960" text-anchor="middle">Pandas</text>
+  <rect x="1070" y="942" width="76" height="28" rx="14" fill="#ebfbf3" stroke="#c7e8d7"/>
+  <text class="chip-text" x="1108" y="960" text-anchor="middle">SQLite</text>
+  <rect x="1156" y="942" width="86" height="28" rx="14" fill="#ebfbf3" stroke="#c7e8d7"/>
+  <text class="chip-text" x="1199" y="960" text-anchor="middle">Metrics</text>
+</svg>

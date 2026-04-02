@@ -1,0 +1,114 @@
+/* ==========================================================================
+   Responsive Breakpoints — Sidebar collapse and content reflow
+   ========================================================================== */
+
+/* --- Large screens (<=1200px): slightly narrower sidebar --- */
+@media (max-width: 1199.98px) {
+  :root {
+    --cp-sidebar-width: 220px;
+  }
+}
+
+/* --- Medium screens (<=991px): icon-only sidebar --- */
+@media (max-width: 991.98px) {
+  .cp-sidebar {
+    width: var(--cp-sidebar-collapsed);
+  }
+
+  .cp-sidebar .cp-nav-item__label,
+  .cp-sidebar .cp-section-label,
+  .cp-sidebar .cp-sidebar__controls,
+  .cp-sidebar .cp-sidebar__footer span {
+    display: none;
+  }
+
+  .cp-sidebar .cp-nav-item {
+    justify-content: center;
+    padding: var(--cp-space-3);
+    margin: var(--cp-space-1) var(--cp-space-2);
+  }
+
+  .cp-sidebar .cp-nav-item__icon {
+    font-size: var(--cp-text-lg);
+  }
+
+  .cp-content {
+    margin-left: var(--cp-sidebar-collapsed);
+  }
+}
+
+/* --- Small screens (<=767px): sidebar hidden, hamburger toggle --- */
+@media (max-width: 767.98px) {
+  .cp-sidebar {
+    transform: translateX(-100%);
+    width: var(--cp-sidebar-width);
+    box-shadow: var(--cp-shadow-xl);
+    z-index: 1040;
+  }
+
+  .cp-sidebar--open {
+    transform: translateX(0);
+  }
+
+  .cp-sidebar--open .cp-nav-item__label,
+  .cp-sidebar--open .cp-section-label,
+  .cp-sidebar--open .cp-sidebar__controls,
+  .cp-sidebar--open .cp-sidebar__footer span {
+    display: revert;
+  }
+
+  .cp-content {
+    margin-left: 0;
+    padding: var(--cp-space-4);
+  }
+
+  .cp-topbar__hamburger {
+    display: flex !important;
+  }
+
+  /* Overlay backdrop when sidebar is open */
+  .cp-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 1035;
+  }
+}
+
+/* Hide hamburger on desktop */
+@media (min-width: 768px) {
+  .cp-topbar__hamburger {
+    display: none !important;
+  }
+}
+
+/* --- KPI cards responsive wrap --- */
+@media (max-width: 767.98px) {
+  .cp-page-title {
+    font-size: var(--cp-text-xl);
+  }
+
+  .cp-run-manager__action-bar {
+    justify-content: stretch;
+  }
+
+  .cp-run-manager__action-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 1199.98px) {
+  .cp-run-manager__action-btn--delete {
+    min-width: 152px;
+  }
+}
+
+@media (max-width: 991.98px) {
+  .cp-run-manager__action-bar {
+    justify-content: flex-start;
+  }
+
+  .cp-run-manager__action-btn {
+    width: 100%;
+  }
+}
