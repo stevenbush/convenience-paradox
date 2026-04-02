@@ -24,7 +24,8 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# Data outputs (keep empirical data, ignore generated results)
+# Data outputs (keep empirical data, ignore generated results).
+# Formal report figures for GitHub: committed under docs/assets/formal_research_report/
 data/results/*
 !data/results/.gitkeep
 
