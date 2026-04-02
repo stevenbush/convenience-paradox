@@ -64,6 +64,21 @@ git commit -m "chore: strip develop-only paths from main after develop merge"
 
 ---
 
+## Formal research report figures (`formal_research_report.md`)
+
+**Constraint.** `.gitignore` ignores generated outputs under `data/results/*` (except `data/results/.gitkeep`). Paths such as `data/results/campaigns/.../figures/` are **not** tracked, so GitHub cannot render images if the markdown points only there.
+
+**Required layout (both `main` and `develop`).**
+
+1. **Committed copies** of the formal-report SVGs live under **`docs/assets/formal_research_report/`** (`figure_01_*.svg` … `figure_15_*.svg`), plus `docs/assets/formal_research_report/README.md` (refresh instructions).
+2. **`formal_research_report.md`** (repo root) must reference figures with **repository-relative** URLs from the root, e.g. `docs/assets/formal_research_report/figure_01_causal_loop.svg`, **not** `data/results/campaigns/...`.
+
+**When regenerating figures** from `analysis/formal_campaign_report_v2.py` (or any campaign run): copy the new `figure_*.svg` files from the campaign’s `report_assets/formal_report_v2/figures/` directory into `docs/assets/formal_research_report/` (keep filenames stable), commit, and push so GitHub’s markdown preview stays correct.
+
+**Do not** widen `.gitignore` to commit whole `data/results/campaigns/` for this purpose—campaign trees are large; the `docs/assets/...` mirror is the supported pattern.
+
+---
+
 ## 1. Project Identity
 
 **Full Title**: *The Convenience Paradox: Agent-Based Modeling of Service Delegation and Social Involution*
