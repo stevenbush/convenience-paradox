@@ -1,7 +1,7 @@
 """
 Blog chart generator for "What a Toy World Taught Me About Convenience."
 
-Produces 9 blog-optimized figures from campaign source CSVs.
+Produces 9 blog-optimized figure assets from campaign source CSVs.
 Outputs PNG (300 dpi) and SVG to a specified directory.
 
 Usage:
@@ -62,6 +62,17 @@ def blog_style(ax, title=None, xlabel=None, ylabel=None):
         ax.set_xlabel(xlabel, fontsize=10, color=PALETTE["text"])
     if ylabel:
         ax.set_ylabel(ylabel, fontsize=10, color=PALETTE["text"])
+
+
+def add_suptitle(fig, title, y=0.98, fontsize=12.5):
+    """Apply a consistent figure-level title across blog charts."""
+    fig.suptitle(
+        title,
+        fontsize=fontsize,
+        fontweight="bold",
+        color=PALETTE["text"],
+        y=y,
+    )
 
 
 def save(fig, out_dir, name):
@@ -136,8 +147,12 @@ def fig_causal_loop(out_dir):
             bbox=dict(boxstyle="round,pad=0.2", facecolor="white",
                       edgecolor=PALETTE["type_b"], linewidth=1.5))
 
-    fig.suptitle("Conceptual Causal Loop: Convenience, Backlog, and Norm Reinforcement",
-                 fontsize=12, fontweight="bold", color=PALETTE["text"], y=0.96)
+    add_suptitle(
+        fig,
+        "Figure 1. The Feedback Loops Driving the Convenience Paradox",
+        y=0.965,
+        fontsize=12,
+    )
     ax.text(0.5, -0.08,
             "R1: Stress → Delegation → Provider Burden → Time Loss → Backlog → Stress (reinforcing)\n"
             "R2: Delegation → Norm → Convenience → Delegation (reinforcing)",
@@ -177,8 +192,10 @@ def fig_horizon_panel(out_dir):
                    ylabel=ylabel)
         ax.legend(fontsize=8, frameon=False)
 
-    fig.suptitle("Type A and Type B Remain Structurally Different Across Longer Horizons",
-                 fontsize=13, fontweight="bold", color=PALETTE["text"], y=0.98)
+    add_suptitle(
+        fig,
+        "Figure 2. Type A and Type B Remain Structurally Different Across Longer Horizons",
+    )
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     save(fig, out_dir, "fig-horizon-panel")
 
@@ -199,8 +216,7 @@ def fig_available_time_density(out_dir):
         ax.hist(vals, bins=30, alpha=0.55, color=color, label=label,
                 edgecolor="white", linewidth=0.5, density=True)
 
-    blog_style(ax, title="Available Time Distribution at Final Step",
-               xlabel="Available Time (hours)", ylabel="Density")
+    blog_style(ax, xlabel="Available Time (hours)", ylabel="Density")
     ax.legend(fontsize=10, frameon=False)
 
     # Annotate means
@@ -211,6 +227,8 @@ def fig_available_time_density(out_dir):
         ax.text(mean_val + 0.1, ax.get_ylim()[1] * (0.9 if va == "top" else 0.7),
                 f"mean: {mean_val:.1f}h", fontsize=9, color=color, fontweight="bold")
 
+    add_suptitle(fig, "Figure 3. Available Time Distribution at Final Step", y=0.97)
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
     save(fig, out_dir, "fig-available-time-density")
 
 
@@ -253,9 +271,11 @@ def fig_phase_atlas(out_dir):
     cb = fig.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
     cb.set_label("log(1 + backlog tasks)", fontsize=9, color=PALETTE["text"])
 
-    blog_style(ax, title="Delegation–Task Load Phase Atlas: Backlog Emergence",
-               xlabel="Delegation Preference Mean",
-               ylabel="Task Load Mean (tasks/step)")
+    blog_style(
+        ax,
+        xlabel="Delegation Preference Mean",
+        ylabel="Task Load Mean (tasks/step)",
+    )
     ax.legend(fontsize=9, frameon=True, facecolor="white", edgecolor=PALETTE["grid"],
               loc="upper left")
 
@@ -267,6 +287,8 @@ def fig_phase_atlas(out_dir):
     ax.text(0.15, 4.5, "Overloaded regime", fontsize=10, color=PALETTE["overload"],
             fontstyle="italic", fontweight="bold", alpha=0.9)
 
+    add_suptitle(fig, "Figure 4. Delegation-Task Load Phase Atlas: Backlog Emergence")
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
     save(fig, out_dir, "fig-phase-atlas")
 
 
@@ -307,8 +329,10 @@ def fig_story_timeseries(out_dir):
     fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=9,
                frameon=False, bbox_to_anchor=(0.5, -0.02))
 
-    fig.suptitle("System Dynamics: Four Story Cases from Relief to Overload",
-                 fontsize=13, fontweight="bold", color=PALETTE["text"], y=0.98)
+    add_suptitle(
+        fig,
+        "Figure 5. System Dynamics: Four Story Cases from Relief to Overload",
+    )
     fig.tight_layout(rect=[0, 0.04, 1, 0.94])
     save(fig, out_dir, "fig-story-timeseries")
 
@@ -340,8 +364,7 @@ def fig_labor_decomposition(out_dir):
             label="Coordination", color=PALETTE["coordination"],
             edgecolor="white", linewidth=0.5)
 
-    blog_style(ax1, title="Labor Composition: Convenience Reshapes Before It Overloads",
-               ylabel="Tail Labor Hours")
+    blog_style(ax1, ylabel="Tail Labor Hours")
 
     ax1.set_xticks(x)
     ax1.set_xticklabels(cases, fontsize=9, rotation=15, ha="right")
@@ -362,7 +385,11 @@ def fig_labor_decomposition(out_dir):
         ax1.text(i, t + 8, f"{t:.0f}h", ha="center", fontsize=8,
                  fontweight="bold", color=PALETTE["text"])
 
-    fig.tight_layout()
+    add_suptitle(
+        fig,
+        "Figure 6. Labor Composition: Convenience Reshapes Before It Overloads",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
     save(fig, out_dir, "fig-labor-decomposition")
 
 
@@ -408,16 +435,78 @@ def fig_cost_sensitivity(out_dir):
                xlabel="Delegation Preference Mean",
                ylabel="Task Load Where Low Cost\nFlips to Higher Stress")
 
-    fig.suptitle("Service Cost Is Conditional: Relief at Low Load, Amplification Near Threshold",
-                 fontsize=12, fontweight="bold", color=PALETTE["text"], y=1.02)
-    fig.tight_layout()
+    add_suptitle(
+        fig,
+        "Figure 7. Service Cost Is Conditional: Relief at Low Load, Amplification Near Threshold",
+        y=0.99,
+        fontsize=12,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     save(fig, out_dir, "fig-cost-sensitivity")
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Figure 8: Mixed-system stability
+# Figure 8a: Mixed-system stability heatmap
 # ═══════════════════════════════════════════════════════════════════
-def fig_mixed_stability(out_dir):
+def fig_mixed_stability_heatmap(out_dir):
+    df = pd.read_csv(SOURCES / "figure_11_mixed_heatmap.csv")
+
+    pivot = df.pivot_table(
+        index="social_conformity_pressure",
+        columns="delegation_preference_mean",
+        values="final_avg_delegation_rate_std",
+    )
+
+    fig, ax = plt.subplots(figsize=(7.2, 5.4))
+    fig.set_facecolor(PALETTE["bg"])
+
+    im = ax.imshow(
+        pivot.values,
+        aspect="auto",
+        origin="lower",
+        cmap="YlOrRd",
+        extent=[
+            pivot.columns.min() - 0.025,
+            pivot.columns.max() + 0.025,
+            pivot.index.min() - 0.1,
+            pivot.index.max() + 0.1,
+        ],
+        interpolation="nearest",
+    )
+
+    for y_idx, y in enumerate(pivot.index):
+        for x_idx, x in enumerate(pivot.columns):
+            value = pivot.loc[y, x]
+            ax.text(
+                x,
+                y,
+                f"{value:.4f}",
+                ha="center",
+                va="center",
+                fontsize=7.5,
+                color="white" if value > 0.0115 else PALETTE["text"],
+            )
+
+    cb = fig.colorbar(im, ax=ax, shrink=0.82, pad=0.02)
+    cb.set_label("Final Delegation Rate Std", fontsize=9, color=PALETTE["text"])
+
+    blog_style(
+        ax,
+        xlabel="Initial Delegation Preference Mean",
+        ylabel="Social Conformity Pressure",
+    )
+    ax.set_xticks(sorted(pivot.columns))
+    ax.set_yticks(sorted(pivot.index))
+
+    add_suptitle(fig, "Figure 8a. Mixed-System Stability: Dispersion Remains Modest")
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    save(fig, out_dir, "fig-mixed-stability")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Figure 8b: Mixed-system stability scatter
+# ═══════════════════════════════════════════════════════════════════
+def fig_mixed_stability_scatter(out_dir):
     scatter = pd.read_csv(SOURCES / "figure_12_mixed_scatter.csv")
 
     fig, ax = plt.subplots(figsize=(7, 5.5))
@@ -444,9 +533,11 @@ def fig_mixed_stability(out_dir):
     cb = fig.colorbar(sc, ax=ax, shrink=0.8)
     cb.set_label("Social Conformity Pressure", fontsize=9, color=PALETTE["text"])
 
-    blog_style(ax, title="Mixed-System Stability: The Middle Holds",
-               xlabel="Initial Delegation Preference Mean",
-               ylabel="Final Delegation Rate")
+    blog_style(
+        ax,
+        xlabel="Initial Delegation Preference Mean",
+        ylabel="Final Delegation Rate",
+    )
     ax.legend(fontsize=9, frameon=True, facecolor="white", edgecolor=PALETTE["grid"])
     ax.set_xlim(0.3, 0.7)
     ax.set_ylim(0.3, 0.7)
@@ -457,57 +548,12 @@ def fig_mixed_stability(out_dir):
             bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
                       edgecolor=PALETTE["grid"], alpha=0.9))
 
-    save(fig, out_dir, "fig-mixed-stability")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Figure 9: Claim boundaries
-# ═══════════════════════════════════════════════════════════════════
-def fig_claim_boundaries(out_dir):
-    tiers = [
-        ("Can Say\nConfidently", [
-            "ABM identifies parameter regions where\nhigher delegation → higher total labor",
-            "ABM compares stress, labor, inequality\nevolution under different configs",
-            "ABM tests whether moderate delegation\nstates remain stable",
-        ], "#6B9E6B"),
-        ("Can Say\nWith Caveat", [
-            "Lower prices push toward more delegation\n(exogenous experiment only)",
-            "Norm lock-in approximated through\ndelegation convergence proxies",
-            "Convenience shifts burdens toward providers\n(exact labor market outside scope)",
-        ], PALETTE["transition"]),
-        ("Cannot Claim\nFrom Model", [
-            "Full causal loop (prices not endogenous)",
-            "Real population measurements\nor named societies",
-            "Skill decay, demographic inequality,\ndelay-tolerance dynamics",
-        ], PALETTE["overload"]),
-    ]
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.set_facecolor(PALETTE["bg"])
-    fig.set_facecolor(PALETTE["bg"])
-    ax.axis("off")
-
-    for col, (tier_name, claims, color) in enumerate(tiers):
-        x_center = 0.17 + col * 0.33
-
-        # Tier header
-        ax.text(x_center, 0.92, tier_name, transform=ax.transAxes,
-                fontsize=12, fontweight="bold", ha="center", va="top",
-                color="white",
-                bbox=dict(boxstyle="round,pad=0.4", facecolor=color,
-                          edgecolor="none", alpha=0.9))
-
-        # Claims
-        for i, claim in enumerate(claims):
-            y = 0.68 - i * 0.25
-            ax.text(x_center, y, claim, transform=ax.transAxes,
-                    fontsize=8.5, ha="center", va="top", color=PALETTE["text"],
-                    bbox=dict(boxstyle="round,pad=0.35", facecolor="white",
-                              edgecolor=color, linewidth=1.2, alpha=0.95))
-
-    fig.suptitle("Claim Boundaries: What the Model Can and Cannot Assert",
-                 fontsize=13, fontweight="bold", color=PALETTE["text"], y=0.98)
-    save(fig, out_dir, "fig-claim-boundaries")
+    add_suptitle(
+        fig,
+        "Figure 8b. Mixed-System Stability: Outcomes Stay Close to Initial Values",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    save(fig, out_dir, "fig-mixed-stability-scatter")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -530,8 +576,8 @@ def main():
         ("fig-story-timeseries", fig_story_timeseries),
         ("fig-labor-decomposition", fig_labor_decomposition),
         ("fig-cost-sensitivity", fig_cost_sensitivity),
-        ("fig-mixed-stability", fig_mixed_stability),
-        ("fig-claim-boundaries", fig_claim_boundaries),
+        ("fig-mixed-stability", fig_mixed_stability_heatmap),
+        ("fig-mixed-stability-scatter", fig_mixed_stability_scatter),
     ]
 
     for name, gen_func in generators:
