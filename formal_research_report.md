@@ -29,11 +29,13 @@ four hypotheses about how delegation rates, service costs, social conformity, an
 to produce emergent patterns in total system labor, individual stress, and inequality. A campaign of
 **14,656 runs** across four research packages provides the evidence base.
 
-Key findings within the model: (1) a convenience-oriented configuration (Type B) consistently
-generates approximately **30.0%** more total system labor than an
-autonomy-oriented configuration (Type A); (2) a narrow task-load threshold band (3.0--3.25 tasks/step)
-marks the transition from manageable delegation to cumulative overload; (3) autonomy-oriented agents
-retain more available time (3.65h vs 2.46h).
+Key findings within the model: (1) the convenience-oriented preset bundle (Type B) consistently
+generates approximately **30.0%** more total system labor than the autonomy-oriented preset bundle
+(Type A), although decomposition runs indicate that most of this published gap is driven by the
+higher task load built into Type B and that the equal-task-load delegation premium is much smaller
+(~3--4%); (2) a narrow task-load threshold band (3.0--3.25 tasks/step) marks the transition from
+manageable delegation to cumulative overload; (3) autonomy-oriented agents retain more available
+time (3.65h vs 2.46h).
 
 **Important framing note:** This work serves as a methodological demonstration of translating
 qualitative social observations into formal agent-based models, showcasing capabilities in structured
@@ -183,18 +185,26 @@ horizons (120, 200, 300, and 450 steps). Six key metrics reveal persistent struc
 neither converge nor diverge with simulation length, suggesting genuine equilibrium separation rather
 than transient startup dynamics.
 
-**Total labor hours** show the most striking gap. At 450 steps, Type B generates
+**Total labor hours** show the most striking preset-bundle gap. At 450 steps, Type B generates
 565.8 hours versus 435.2 for Type A -- a
-**30.0% premium**. Crucially, this gap is already visible at 120 steps
+**30.0% premium**. Crucially, this same separation is already visible at 120 steps
 (568.9 vs 434.0 hours,
 ~31.1% difference) and remains stable through all subsequent
-horizons, confirming that the labor overhead is a *structural* feature of the high-delegation
-configuration rather than an initialization artifact.
+horizons, confirming that the *Type B preset-bundle gap* is a structural feature of the comparison
+rather than an initialization artifact. However, this is not a ceteris paribus estimate of delegation
+alone: the two presets differ simultaneously in delegation preference, service cost, conformity
+pressure, and especially task load mean (2.2 vs 2.8 tasks/step). Existing decomposition runs make
+the distinction clear. In the same campaign, the Type A baseline records 435.5 tail-mean labor hours,
+the Type B baseline records 566.1, and a Type B counterfactual with task load aligned back to 2.2
+falls to 450.0. Once task load is aligned, the remaining labor premium is only about 3--4%. The
+appropriate interpretation is therefore two-layered: H1 is strongly supported at the preset-world
+level, while the delegation-only effect under equal task load is positive but much smaller.
 
-**Stress levels** mirror this pattern: Type B agents maintain consistently higher average stress
+**Stress levels** also separate across the presets: Type B agents maintain higher average stress
 (0.052 vs 0.039 at 450 steps). Although both values
-remain below the acute-distress saturation level (1.0), the persistent gap reflects the tighter time
-budgets imposed by coordination overhead and service provision duties in the convenience configuration.
+remain below the acute-distress saturation level (1.0), this gap reflects the combined effect of
+heavier exogenous task load and the tighter time budgets imposed by coordination overhead and service
+provision duties in the convenience configuration.
 
 **Available time** tells the agent-level story most directly: Type A agents retain
 3.65 hours of uncommitted time on average versus only
@@ -202,7 +212,8 @@ budgets imposed by coordination overhead and service provision duties in the con
 1.20 hours. Within the model's 8-hour daily budget, this
 means Type A agents preserve roughly 45.7% of their time budget as
 discretionary, compared to 30.7% for Type B. This difference
-accumulates through coordination costs and provider burden that Type B agents bear.
+accumulates through the combined effect of higher task pressure, coordination costs, and provider
+burden in the Type B preset.
 
 **Delegation rates** confirm configuration integrity: Type B agents delegate
 64.5% of tasks versus 8.9% for
@@ -227,11 +238,16 @@ heterogeneous preferences -- a direct consequence of stronger conformity pressur
 configuration (0.65 vs 0.15). Income distributions in Type B display a longer right tail, a signature
 of the service economy where a subset of agents earns significantly more from service provision.
 
-**What this does not tell us:** The model uses exogenous, fixed service costs. In a real economy, the
-30.0% labor premium might be partially offset by endogenous price
-adjustments, productivity gains from specialization, or quality improvements in delegated services. The
-premium reflects the *structural cost of coordination and provider overhead* within this model's
-accounting framework, not a universal law of delegation economics.
+**What this does not tell us:** The published 30.0% labor premium is not a ceteris paribus estimate of
+delegation alone. The Type A and Type B comparison bundles together higher delegation, lower service
+cost, stronger conformity, and a higher task load, so the result should be read as a preset-world
+comparison rather than a single-parameter causal estimate. Existing decomposition results indicate
+that most of the observed gap is driven by the heavier task pressure built into Type B; once task load
+is aligned, the remaining labor premium is only on the order of 3--4%. The model therefore supports a
+more specific claim: delegation acts as a labor-transfer and overload amplifier, especially near the
+3.0--3.25 threshold band, rather than as a standalone explanation for the full preset gap. In a real
+economy, endogenous price adjustments, productivity gains from specialization, or quality improvements
+in delegated services could further reshape these balances.
 
 ### 6.2 H2: Threshold Triggers Involution (Strong Support)
 
@@ -324,15 +340,18 @@ The decomposition reveals how convenience *reshapes* the labor structure before 
   361.4h and coordination costs add
   28.1h. Total:
   566.8h -- *higher* than the autonomy case despite
-  substantially less self-labor. This is the core mechanism of H1 made visible at the component level.
+  substantially less self-labor. This makes the labor-transfer mechanism behind H1 visible at the
+  component level, but it should not be read as proof that delegation alone explains the full preset
+  gap, because the convenience baseline also carries a higher exogenous task load.
 - **Threshold Pressure** and **Overloaded Convenience**: The labor mix shifts further as coordination
   and service costs dominate. In the overloaded case, all labor categories saturate at maximum capacity.
 
-The delegation labor delta line (orange, right axis) quantifies the *net* labor effect of delegation:
-it is consistently positive in the convenience configurations, confirming that within this model,
-delegation is a *net labor creator*, not a labor saver. Each delegated task generates more total
-system work-hours than the same task completed self-sufficiently -- because coordination overhead (15%)
-and provider time penalties (11%) add to the baseline task cost.
+The delegation labor delta line (orange, right axis) quantifies the difference between realised
+delegated labor and the requester's counterfactual self-service time. Its near-zero-to-negative values
+in these story cases indicate that per-task delegation efficiency and system-level labor growth are
+not the same object. The aggregate H1 result arises from the combination of heavier task pressure,
+labor transfer, and coordination overhead across the preset bundle, not from a simple claim that each
+delegated task always adds labor by itself.
 
 <figure style="margin:1.6rem auto 1.25rem auto; width:100%; max-width:760px;"><div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; padding:14px 14px 10px 14px; box-shadow:0 1px 2px rgba(15,23,42,0.06);"><img src="docs/assets/formal_research_report/figure_10_available_time_density.svg" alt="figure_10_available_time_density" width="760" loading="lazy" style="display:block; width:100%; max-width:760px; height:auto; margin:0 auto;" /></div><figcaption style="margin-top:0.55rem; text-align:center; font-size:0.92rem; line-height:1.45; color:#6b7280;">Figure 10. Available-time distribution.</figcaption></figure>
 
@@ -435,7 +454,7 @@ effects depending on whether the system is below or near its capacity boundary.
 
 | hypothesis | judgment | evidence | interpretation |
 | --- | --- | --- | --- |
-| H1 | Strong support | Type B maintains a 30.0% labor premium at 450 steps. | Higher delegation is consistently linked to more total system labor. |
+| H1 | Strong support (preset level); modest positive equal-load effect | Type B maintains a 30.0% preset-bundle labor premium at 450 steps, while equal-task-load decomposition reduces the gap to ~3--4%. | Convenience-oriented preset bundles use more total labor overall; delegation alone adds a smaller positive premium that grows near the threshold band. |
 | H2 | Strong support | Threshold band at task load 3.10, refined to 3.0–3.25. | A narrow overload band precedes the high-backlog regime. |
 | H3 | Partial support | Type A retains 3.65h vs 2.46h for Type B. | Autonomy preserves more personal time; convenience is not directly measured. |
 | H4 | Partial (important negative) | Max mixed-state std = 0.0125. | Moderate instability, but no dramatic bifurcation under current parameters. |
@@ -449,7 +468,7 @@ effects depending on whether the system is below or near its capacity boundary.
 This analysis employs a three-tier claim structure to maintain transparency:
 
 **Can Say Confidently:**
-- The ABM identifies parameter regions where higher delegation associates with higher total labor.
+- The ABM finds that convenience-oriented preset bundles use more total labor overall, and that at fixed task load higher delegation is associated with a smaller positive labor premium that grows near the threshold band.
 - The ABM compares how stress, labor, and inequality evolve under different configurations.
 - The ABM tests whether moderate delegation states remain stable under its feedback rules.
 
@@ -535,8 +554,11 @@ This agent-based modeling study explored the **convenience-autonomy tension** th
 simulation runs, testing four hypotheses about service delegation, labor transfer, threshold effects,
 and norm lock-in. The key findings within the model:
 
-1. **Delegation increases system labor** (H1, strong support): Type B generates ~30.0%
-   more total labor, a persistent structural gap across all simulation horizons.
+1. **Convenience-oriented preset bundles increase system labor** (H1, strong support at the preset
+   level): Type B generates ~30.0% more tail-mean labor than Type A across all simulation horizons,
+   but decomposition indicates that most of this published gap comes from the higher task load built
+   into the preset. With task load aligned, the remaining delegation-related premium is positive but
+   modest (~3--4%) and grows mainly as task pressure approaches the threshold band.
 2. **A narrow threshold triggers involution** (H2, strong support): The transition from manageable
    delegation to cumulative overload occurs in a narrow band (task load 3.0--3.25).
 3. **Autonomy preserves available time** (H3, partial support): Type A retains more personal time,
@@ -567,8 +589,10 @@ labor hours, and backlog tasks -- respond to task load at five different delegat
   Above the threshold band (3.0--3.25), stress saturates rapidly. Higher delegation levels produce
   marginally higher stress at any given task load, but the dominant factor is task load itself.
 - **Total labor hours**: The separation between delegation levels is most visible in the
-  sub-threshold range. Higher delegation generates more total labor even when the system is
-  comfortable -- confirming H1's finding that the labor premium is not contingent on overload.
+  sub-threshold range. At fixed task load, higher delegation still raises total labor even when the
+  system is comfortable, but the effect is modest there and grows as the system approaches the
+  threshold band. The much larger ~30% H1 gap reported for Type A vs Type B therefore reflects both a
+  positive delegation effect and the higher task load built into the Type B preset.
 - **Backlog tasks** (log scale): The most dramatic visualization of the threshold. Below 3.0, backlog
   is zero for all delegation levels. Above 3.25, backlog grows by orders of magnitude. The steepness
   of this transition -- spanning from zero to thousands within a 0.25-unit window -- illustrates why
