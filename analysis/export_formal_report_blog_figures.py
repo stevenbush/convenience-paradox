@@ -6,8 +6,11 @@ uses the committed formal-report SVGs as the authoritative visual source and
 derives blog copies that only differ in:
   1. visible in-figure title text
   2. figure numbering for the blog sequence
+  3. adaptive title sizing tuned for the blog's responsive display widths
 
-The chart body, axes, legends, paths, and annotations remain unchanged.
+The chart body, axes, legends, paths, and annotations remain unchanged. Blog
+display consistency is achieved by pairing these SVG exports with uniform
+figure-card wrappers in the markdown posts.
 """
 
 from __future__ import annotations
@@ -48,8 +51,8 @@ class ExportSpec:
     source_name: str
     output_name: str
     title: str
-    font_size: float = 13.0
-    title_y: float = 17.5
+    display_max_width: float
+    target_display_title_px: float = 12.8
 
 
 EXPORT_SPECS: tuple[ExportSpec, ...] = (
@@ -57,46 +60,55 @@ EXPORT_SPECS: tuple[ExportSpec, ...] = (
         "figure_01_causal_loop.svg",
         "fig-causal-loop.svg",
         "Figure 1. The Feedback Loops Driving the Convenience Paradox",
+        display_max_width=760.0,
     ),
     ExportSpec(
         "figure_04_horizon_panel.svg",
         "fig-horizon-panel.svg",
         "Figure 2. Type A and Type B Remain Structurally Different Across Longer Horizons",
+        display_max_width=1040.0,
     ),
     ExportSpec(
         "figure_10_available_time_density.svg",
         "fig-available-time-density.svg",
         "Figure 3. Available Time Distribution at Final Step",
+        display_max_width=760.0,
     ),
     ExportSpec(
         "figure_06_phase_atlas.svg",
         "fig-phase-atlas.svg",
         "Figure 4. Delegation-Task Load Phase Atlas: Backlog Emergence",
+        display_max_width=920.0,
     ),
     ExportSpec(
         "figure_08_story_timeseries.svg",
         "fig-story-timeseries.svg",
         "Figure 5. System Dynamics: Four Story Cases from Relief to Overload",
+        display_max_width=1040.0,
     ),
     ExportSpec(
         "figure_09_labor_decomposition.svg",
         "fig-labor-decomposition.svg",
         "Figure 6. Labor Composition: Convenience Reshapes Before It Overloads",
+        display_max_width=920.0,
     ),
     ExportSpec(
         "figure_13_cost_sensitivity.svg",
         "fig-cost-sensitivity.svg",
         "Figure 7. Service Cost Is Conditional: Relief at Low Load, Amplification Near Threshold",
+        display_max_width=1040.0,
     ),
     ExportSpec(
         "figure_11_mixed_heatmap.svg",
         "fig-mixed-stability.svg",
         "Figure 8a. Mixed-System Stability: Dispersion Remains Modest",
+        display_max_width=760.0,
     ),
     ExportSpec(
         "figure_12_mixed_scatter.svg",
         "fig-mixed-stability-scatter.svg",
         "Figure 8b. Mixed-System Stability: Outcomes Stay Close to Initial Values",
+        display_max_width=760.0,
     ),
 )
 
@@ -130,7 +142,20 @@ def _find_title_group(figure: ET.Element) -> ET.Element:
     raise ValueError("Could not find visible title group in formal-report SVG")
 
 
+def _compute_title_font_size(width: float, spec: ExportSpec) -> float:
+    """Scale title size so it reads consistently at the blog display width."""
+    scaled = spec.target_display_title_px * width / spec.display_max_width
+    return round(min(16.0, max(10.0, scaled)), 1)
+
+
+def _compute_title_y(font_size: float) -> float:
+    """Keep a little breathing room above tall titles without over-padding."""
+    return round(max(18.0, font_size * 1.45), 1)
+
+
 def _make_blog_title_group(width: float, spec: ExportSpec) -> ET.Element:
+    font_size = _compute_title_font_size(width, spec)
+    title_y = _compute_title_y(font_size)
     group = ET.Element(f"{SVG}g", {"id": "blog_title"})
     group.append(ET.Comment(f" {spec.title} "))
     text = ET.SubElement(
@@ -138,10 +163,10 @@ def _make_blog_title_group(width: float, spec: ExportSpec) -> ET.Element:
         f"{SVG}text",
         {
             "x": f"{width / 2:.3f}",
-            "y": f"{spec.title_y:.3f}",
+            "y": f"{title_y:.3f}",
             "text-anchor": "middle",
             "font-family": "DejaVu Serif, Georgia, serif",
-            "font-size": f"{spec.font_size:.1f}px",
+            "font-size": f"{font_size:.1f}px",
             "font-weight": "700",
             "fill": "#2d2d2d",
         },
