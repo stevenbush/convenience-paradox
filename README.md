@@ -337,7 +337,6 @@ convenience-paradox/
 ├── LICENSE
 ├── README.md
 ├── formal_research_report.md # Stable long-form synthesis from the latest offline campaign
-├── AGENTS.md / CLAUDE.md     # AI-assistant charters (tooling); not runtime deps
 ├── environment.yml           # Conda env (recommended)
 ├── requirements.txt          # Pip mirror of core dependencies
 ├── scripts/
@@ -346,17 +345,18 @@ convenience-paradox/
 ├── api/                      # LLM service, audit, Pydantic schemas
 ├── dash_app/                 # Dash app factory, pages, components, assets, db
 │   └── __main__.py           # `python -m dash_app` entry point
-├── analysis/                 # Campaign runners, LLM role probe, plots, report artifacts
+├── analysis/                 # Campaign runners, probes, plots, report artifacts
+│   └── reports/              # Markdown summaries for experiments and analysis runs
 ├── data/
 │   ├── empirical/            # Stylized facts (ILO, OECD, WVS, …) — committed
-│   └── results/              # Outputs & llm_logs — gitignored
+│   └── results/              # Outputs, campaigns, and llm_logs — gitignored
 ├── tests/                    # Unit + Dash shell tests; conftest.py
 └── docs/
-    ├── plans/                # Phase plans (reference; do not edit in execution)
-    └── execution_log.md      # Build history
+    ├── assets/               # Architecture diagram, demo GIFs, formal-report figures
+    └── *.md                  # Supplementary notes and background documentation
 ```
 
-The legacy Flask-era `static/` and `templates/` trees were removed; styling and scripts live under `dash_app/assets/` and Dash components.
+Frontend assets and styling live under `dash_app/assets/`; the legacy Flask-era `static/` and `templates/` trees are no longer part of the app structure.
 
 ---
 
